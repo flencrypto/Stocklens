@@ -92,8 +92,10 @@ async function fetchCoinDetail(id: string): Promise<CryptoData> {
 
   const description = data.description?.en
     ? String(data.description.en)
-        .replace(/<script[\s\S]*?<\/script>/gi, '')
-        .replace(/<[^>]+>/g, '')
+        // Remove all HTML tags (including script, style, etc.)
+        .replace(/<[^>]*>/g, ' ')
+        // Collapse whitespace
+        .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 500)
     : null;
