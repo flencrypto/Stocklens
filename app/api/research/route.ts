@@ -141,9 +141,17 @@ export async function GET(request: NextRequest) {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
+    const lower = message.toLowerCase();
+    // Map client/input errors to appropriate HTTP status codes
+    const status =
+      lower.includes('not found') || lower.includes('no results') || lower.includes('invalid ticker')
+        ? 404
+        : lower.includes('invalid') || lower.includes('bad request') || lower.includes('contract address')
+        ? 400
+        : 500;
     return NextResponse.json(
       { error: `Failed to fetch data for "${query}": ${message}` },
-      { status: 500 }
+      { status }
     );
   }
 }

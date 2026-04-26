@@ -45,10 +45,10 @@ export default function DonutChart({
             stroke="#1E2D47"
             strokeWidth={strokeWidth}
           />
-          {segments.map((seg, i) => {
-            const pct = total > 0 ? seg.value / total : 0;
+          {total > 0 && segments.map((seg, i) => {
+            const pct = seg.value / total;
             const dashArray = pct * circumference;
-            const offset = circumference - cumulativeOffset * circumference / total;
+            const offset = circumference - (cumulativeOffset * circumference) / total;
             cumulativeOffset += seg.value;
 
             return (

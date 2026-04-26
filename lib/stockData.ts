@@ -108,7 +108,7 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
       revenue = safeNum((stmts[0] as Record<string, unknown>).totalRevenue);
       if (stmts.length > 1) {
         const prevRevenue = safeNum((stmts[1] as Record<string, unknown>).totalRevenue);
-        if (revenue && prevRevenue && prevRevenue !== 0) {
+        if (revenue != null && prevRevenue != null && prevRevenue !== 0) {
           revenueGrowth = (revenue - prevRevenue) / prevRevenue;
         }
       }
@@ -117,10 +117,10 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
     // fallback
   }
 
-  if (!revenue) {
+  if (revenue == null) {
     revenue = safeNum((financialData as Record<string, unknown>)?.totalRevenue);
   }
-  if (!revenueGrowth) {
+  if (revenueGrowth == null) {
     revenueGrowth = safeNum((financialData as Record<string, unknown>)?.revenueGrowth);
   }
 
@@ -135,7 +135,7 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
     price: priceVal,
     previousClose: prevClose,
     priceChange: priceChg,
-    priceChangePercent: priceChgPct ? priceChgPct * 100 : null,
+    priceChangePercent: priceChgPct != null ? priceChgPct * 100 : null,
     marketCap: safeNum(price?.marketCap),
     enterpriseValue: safeNum((keyStats as Record<string, unknown>)?.enterpriseValue),
     revenue,

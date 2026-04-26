@@ -4,6 +4,7 @@ import React from 'react';
 import DonutChart from './DonutChart';
 import { StockData } from '@/lib/stockData';
 import { CryptoData } from '@/lib/cryptoData';
+import { fmtLarge, fmtPct, fmtPctDirect, pctColor } from '@/lib/format';
 
 interface InfographicPage1Props {
   type: 'stock' | 'crypto';
@@ -11,40 +12,18 @@ interface InfographicPage1Props {
   assetClass: string;
 }
 
-function fmtLarge(n: number | null | undefined, prefix = '$'): string {
-  if (n === null || n === undefined) return 'N/A';
-  if (n >= 1e12) return `${prefix}${(n / 1e12).toFixed(2)}T`;
-  if (n >= 1e9) return `${prefix}${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `${prefix}${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `${prefix}${(n / 1e3).toFixed(2)}K`;
-  return `${prefix}${n.toFixed(2)}`;
-}
-
-function fmtPct(n: number | null | undefined): string {
-  if (n === null || n === undefined) return 'N/A';
-  const sign = n >= 0 ? '+' : '';
-  return `${sign}${(n * 100).toFixed(1)}%`;
-}
-
-function fmtPctDirect(n: number | null | undefined): string {
-  if (n === null || n === undefined) return 'N/A';
-  const sign = n >= 0 ? '+' : '';
-  return `${sign}${n.toFixed(1)}%`;
-}
-
-function pctColor(n: number | null | undefined, invert = false): string {
-  if (n === null || n === undefined) return 'text-slate-400';
-  const positive = n >= 0;
-  if (invert) return positive ? 'text-red-400' : 'text-green-400';
-  return positive ? 'text-green-400' : 'text-red-400';
-}
-
 // Generate dynamic analysis text
 function generateThesis(type: string, data: StockData | CryptoData, assetClass: string): string {
   if (type === 'stock') {
     const d = data as StockData;
-    const growth = d.revenueGrowth ? `${(d.revenueGrowth * 100).toFixed(0)}% revenue growth` : 'strong fundamentals';
-    const margin = d.grossMargin ? ` with ${(d.grossMargin * 100).toFixed(0)}% gross margins` : '';
+    const growth =
+      d.revenueGrowth !== null && d.revenueGrowth !== undefined
+        ? `${(d.revenueGrowth * 100).toFixed(0)}% revenue growth`
+        : 'strong fundamentals';
+    const margin =
+      d.grossMargin !== null && d.grossMargin !== undefined
+        ? ` with ${(d.grossMargin * 100).toFixed(0)}% gross margins`
+        : '';
     return `${d.name} is a ${assetClass} demonstrating ${growth}${margin}, positioned at the intersection of secular tech tailwinds.`;
   } else {
     const d = data as CryptoData;

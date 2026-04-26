@@ -4,26 +4,12 @@ import React from 'react';
 import ScoreRing from './ScoreRing';
 import { StockData } from '@/lib/stockData';
 import { CryptoData } from '@/lib/cryptoData';
+import { fmtLarge, fmtPctDirect } from '@/lib/format';
 
 interface InfographicPage2Props {
   type: 'stock' | 'crypto';
   data: StockData | CryptoData;
   assetClass: string;
-}
-
-function fmtLarge(n: number | null | undefined, prefix = '$'): string {
-  if (n === null || n === undefined) return 'N/A';
-  if (n >= 1e12) return `${prefix}${(n / 1e12).toFixed(2)}T`;
-  if (n >= 1e9) return `${prefix}${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `${prefix}${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `${prefix}${(n / 1e3).toFixed(2)}K`;
-  return `${prefix}${n.toFixed(2)}`;
-}
-
-function fmtPctDirect(n: number | null | undefined): string {
-  if (n === null || n === undefined) return 'N/A';
-  const sign = n >= 0 ? '+' : '';
-  return `${sign}${n.toFixed(1)}%`;
 }
 
 // Calculate investment score
@@ -32,56 +18,56 @@ function calcScore(type: string, data: StockData | CryptoData): number {
 
   if (type === 'stock') {
     const d = data as StockData;
-    if (d.revenueGrowth) {
+    if (d.revenueGrowth !== null && d.revenueGrowth !== undefined) {
       if (d.revenueGrowth > 0.3) score += 1.0;
       else if (d.revenueGrowth > 0.15) score += 0.5;
       else if (d.revenueGrowth < 0) score -= 1.0;
     }
-    if (d.grossMargin) {
+    if (d.grossMargin !== null && d.grossMargin !== undefined) {
       if (d.grossMargin > 0.6) score += 0.8;
       else if (d.grossMargin > 0.4) score += 0.4;
       else if (d.grossMargin < 0.2) score -= 0.4;
     }
-    if (d.operatingMargin) {
+    if (d.operatingMargin !== null && d.operatingMargin !== undefined) {
       if (d.operatingMargin > 0.2) score += 0.5;
       else if (d.operatingMargin < 0) score -= 0.8;
     }
-    if (d.peRatio) {
+    if (d.peRatio !== null && d.peRatio !== undefined) {
       if (d.peRatio > 80) score -= 0.8;
       else if (d.peRatio > 50) score -= 0.4;
       else if (d.peRatio < 25) score += 0.4;
     }
-    if (d.debtToEquity) {
+    if (d.debtToEquity !== null && d.debtToEquity !== undefined) {
       if (d.debtToEquity > 200) score -= 0.5;
       else if (d.debtToEquity < 50) score += 0.3;
     }
-    if (d.beta) {
+    if (d.beta !== null && d.beta !== undefined) {
       if (d.beta > 2) score -= 0.3;
     }
   } else {
     const d = data as CryptoData;
-    if (d.marketCapRank) {
+    if (d.marketCapRank !== null && d.marketCapRank !== undefined) {
       if (d.marketCapRank <= 10) score += 1.2;
       else if (d.marketCapRank <= 50) score += 0.6;
       else if (d.marketCapRank > 200) score -= 0.5;
     }
-    if (d.priceChangePercentage30d) {
+    if (d.priceChangePercentage30d !== null && d.priceChangePercentage30d !== undefined) {
       if (d.priceChangePercentage30d > 50) score += 0.8;
       else if (d.priceChangePercentage30d > 20) score += 0.4;
       else if (d.priceChangePercentage30d < -40) score -= 0.8;
       else if (d.priceChangePercentage30d < -20) score -= 0.4;
     }
-    if (d.fdv && d.marketCap) {
+    if (d.fdv !== null && d.fdv !== undefined && d.marketCap !== null && d.marketCap !== undefined && d.marketCap !== 0) {
       const ratio = d.fdv / d.marketCap;
       if (ratio > 10) score -= 0.8;
       else if (ratio < 2) score += 0.4;
     }
-    if (d.volume24h && d.marketCap) {
+    if (d.volume24h !== null && d.volume24h !== undefined && d.marketCap !== null && d.marketCap !== undefined && d.marketCap !== 0) {
       const volRatio = d.volume24h / d.marketCap;
       if (volRatio > 0.1) score += 0.4;
       else if (volRatio < 0.01) score -= 0.3;
     }
-    if (d.athChangePercentage) {
+    if (d.athChangePercentage !== null && d.athChangePercentage !== undefined) {
       if (d.athChangePercentage > -20) score += 0.5;
       else if (d.athChangePercentage < -80) score -= 0.4;
     }
@@ -97,35 +83,35 @@ function generateScoreBreakdown(type: string, data: StockData | CryptoData) {
     return [
       {
         category: 'Growth',
-        score: d.revenueGrowth
+        score: d.revenueGrowth !== null && d.revenueGrowth !== undefined
           ? d.revenueGrowth > 0.3 ? 9 : d.revenueGrowth > 0.15 ? 7 : d.revenueGrowth > 0 ? 5 : 3
           : 5,
         weight: '25%',
       },
       {
         category: 'Profitability',
-        score: d.grossMargin
+        score: d.grossMargin !== null && d.grossMargin !== undefined
           ? d.grossMargin > 0.6 ? 9 : d.grossMargin > 0.4 ? 7 : d.grossMargin > 0.2 ? 5 : 3
           : 5,
         weight: '25%',
       },
       {
         category: 'Valuation',
-        score: d.peRatio
+        score: d.peRatio !== null && d.peRatio !== undefined
           ? d.peRatio < 20 ? 9 : d.peRatio < 35 ? 7 : d.peRatio < 60 ? 5 : 3
           : 5,
         weight: '20%',
       },
       {
         category: 'Balance Sheet',
-        score: d.debtToEquity
+        score: d.debtToEquity !== null && d.debtToEquity !== undefined
           ? d.debtToEquity < 50 ? 9 : d.debtToEquity < 100 ? 7 : d.debtToEquity < 200 ? 5 : 3
           : 5,
         weight: '15%',
       },
       {
         category: 'Momentum',
-        score: d.priceChangePercent
+        score: d.priceChangePercent !== null && d.priceChangePercent !== undefined
           ? d.priceChangePercent > 5 ? 8 : d.priceChangePercent > 0 ? 6 : 4
           : 5,
         weight: '15%',
@@ -136,35 +122,35 @@ function generateScoreBreakdown(type: string, data: StockData | CryptoData) {
     return [
       {
         category: 'Market Position',
-        score: d.marketCapRank
+        score: d.marketCapRank !== null && d.marketCapRank !== undefined
           ? d.marketCapRank <= 10 ? 9 : d.marketCapRank <= 50 ? 7 : d.marketCapRank <= 100 ? 5 : 3
           : 5,
         weight: '25%',
       },
       {
         category: 'Momentum (30d)',
-        score: d.priceChangePercentage30d
+        score: d.priceChangePercentage30d !== null && d.priceChangePercentage30d !== undefined
           ? d.priceChangePercentage30d > 50 ? 9 : d.priceChangePercentage30d > 20 ? 7 : d.priceChangePercentage30d > 0 ? 5 : 3
           : 5,
         weight: '20%',
       },
       {
         category: 'Tokenomics',
-        score: d.fdv && d.marketCap
+        score: d.fdv !== null && d.fdv !== undefined && d.marketCap !== null && d.marketCap !== undefined && d.marketCap !== 0
           ? d.fdv / d.marketCap < 2 ? 9 : d.fdv / d.marketCap < 5 ? 7 : d.fdv / d.marketCap < 10 ? 5 : 3
           : 5,
         weight: '20%',
       },
       {
         category: 'Liquidity',
-        score: d.volume24h && d.marketCap
+        score: d.volume24h !== null && d.volume24h !== undefined && d.marketCap !== null && d.marketCap !== undefined && d.marketCap !== 0
           ? (d.volume24h / d.marketCap) > 0.1 ? 9 : (d.volume24h / d.marketCap) > 0.05 ? 7 : 5
           : 5,
         weight: '20%',
       },
       {
         category: 'ATH Distance',
-        score: d.athChangePercentage
+        score: d.athChangePercentage !== null && d.athChangePercentage !== undefined
           ? d.athChangePercentage > -20 ? 8 : d.athChangePercentage > -50 ? 6 : 4
           : 5,
         weight: '15%',
@@ -210,8 +196,6 @@ function generateCompetitors(type: string, data: StockData | CryptoData, assetCl
     const ticker = d.ticker;
     const isAI = assetClass.includes('AI') || assetClass.includes('Semiconductor');
     const isSaaS = assetClass.includes('SaaS') || assetClass.includes('Cloud');
-    const isFinance = assetClass.includes('Financial');
-    void isFinance; // used for future categorization
 
     if (isAI || assetClass.includes('Semiconductor')) {
       const base = [
