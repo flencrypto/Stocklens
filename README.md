@@ -33,7 +33,7 @@ Open [http://localhost:3000](http://localhost:3000) and type any asset into the 
 
 ## Tech Stack
 
-- **Framework**: Next.js 14 (App Router) + TypeScript
+- **Framework**: Next.js 15 (App Router) + TypeScript
 - **Styling**: Tailwind CSS with custom dark fintech theme
 - **Charts**: Pure SVG (no external chart libraries)
 - **Stock Data**: `yahoo-finance2`
