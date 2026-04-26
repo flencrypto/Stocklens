@@ -147,7 +147,7 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
     cash: safeNum((financialData as Record<string, unknown>)?.totalCash),
     totalDebt: safeNum((financialData as Record<string, unknown>)?.totalDebt),
     debtToEquity: safeNum((financialData as Record<string, unknown>)?.debtToEquity),
-    peRatio: safeNum(summaryDetail?.trailingPE || (keyStats as Record<string, unknown>)?.trailingEps),
+    peRatio: safeNum(summaryDetail?.trailingPE),
     psRatio: safeNum((keyStats as Record<string, unknown>)?.priceToSalesTrailing12Months),
     pbRatio: safeNum((keyStats as Record<string, unknown>)?.priceToBook),
     forwardPE: safeNum(summaryDetail?.forwardPE),

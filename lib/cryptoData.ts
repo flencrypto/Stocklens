@@ -91,7 +91,11 @@ async function fetchCoinDetail(id: string): Promise<CryptoData> {
   const github = githubRepos.length > 0 ? githubRepos[0] : null;
 
   const description = data.description?.en
-    ? data.description.en.replace(/<[^>]*>/g, '').slice(0, 500)
+    ? String(data.description.en)
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<[^>]+>/g, '')
+        .trim()
+        .slice(0, 500)
     : null;
 
   return {
@@ -130,9 +134,13 @@ async function fetchCoinDetail(id: string): Promise<CryptoData> {
 }
 
 export async function fetchCryptoData(query: string): Promise<CryptoData> {
-  // Contract address
+  // Contract address - validate it's a proper Ethereum address (0x + 40 hex chars)
   if (query.startsWith('0x')) {
-    const url = `${COINGECKO_BASE}/coins/ethereum/contract/${query}`;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(query)) {
+      throw new Error('Invalid Ethereum contract address format');
+    }
+    const safeAddress = query.toLowerCase();
+    const url = `${COINGECKO_BASE}/coins/ethereum/contract/${safeAddress}`;
     const { data } = await axios.get(url, { headers: HEADERS, timeout: 15000 });
     return fetchCoinDetail(data.id);
   }
