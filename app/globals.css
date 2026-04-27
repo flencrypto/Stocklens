@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #050810;
+  --foreground: #e2e8f0;
+  --card-bg: #0D1422;
+  --card-border: #1E2D47;
+  --accent-purple: #a855f7;
+  --accent-blue: #60a5fa;
+  --accent-green: #4ade80;
+  --accent-red: #f87171;
+  --accent-yellow: #facc15;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .gradient-text {
+    background: linear-gradient(135deg, #60a5fa, #a855f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .card-glass {
+    background: rgba(13, 20, 34, 0.8);
+    border: 1px solid #1E2D47;
+    backdrop-filter: blur(8px);
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #0D1422;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #1E2D47;
+    border-radius: 2px;
+  }
+}
+
+@layer components {
+  .metric-row {
+    @apply flex items-center justify-between py-1.5 border-b border-[#1E2D47] last:border-0;
+  }
+  .metric-label {
+    @apply text-xs text-slate-400 font-medium;
+  }
+  .metric-value {
+    @apply text-xs text-slate-100 font-semibold;
+  }
+  .section-header {
+    @apply text-xs font-bold uppercase tracking-widest text-blue-400 mb-2;
+  }
+  .infographic-card {
+    @apply bg-[#0D1422] border border-[#1E2D47] rounded-lg p-3;
+  }
+}
+
+@media print {
+  body {
+    background: #080C14;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
