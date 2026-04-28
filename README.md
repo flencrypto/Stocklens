@@ -59,12 +59,14 @@ You can supply a key in two ways:
    under the search bar and paste your key. It is stored only in your
    browser's `localStorage` and sent directly from your browser to
    `api.openai.com`.
-2. **At build/deploy time** — set the `NEXT_PUBLIC_OPENAI_API_KEY` env var
-   before running `npm run build` / `npm run dev`. ⚠️ Because Stocklens is a
-   client-rendered app, any value placed in this variable is bundled into the
-   JavaScript shipped to the browser. Only use this option for personal
-   deployments where exposing the key is acceptable; for shared deployments,
-   prefer the runtime input.
+2. **At build/deploy time** — set the `OPENAI_KEY` env var (this is the
+   variable name configured in the Vercel project settings as a Sensitive
+   variable for Production and Preview; `NEXT_PUBLIC_OPENAI_API_KEY` is also
+   accepted as a fallback) before running `npm run build` / `npm run dev`.
+   ⚠️ Because Stocklens is a client-rendered app, any value placed in this
+   variable is bundled into the JavaScript shipped to the browser. Only use
+   this option for personal deployments where exposing the key is
+   acceptable; for shared deployments, prefer the runtime input.
 
 The default model is `gpt-4o-mini`. Insight generation failures are
 non-fatal — the UI will surface a small notice and continue to render the
