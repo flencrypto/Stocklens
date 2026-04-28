@@ -1,6 +1,3 @@
-import YahooFinance from 'yahoo-finance2';
-const yahooFinance = new YahooFinance();
-
 export interface StockData {
   ticker: string;
   name: string;
@@ -49,55 +46,103 @@ export interface StockData {
   country: string | null;
 }
 
+const YF_BASE = 'https://query1.finance.yahoo.com';
+const YF_MODULES = [
+  'price',
+  'summaryDetail',
+  'financialData',
+  'defaultKeyStatistics',
+  'incomeStatementHistory',
+  'assetProfile',
+].join(',');
+
 export async function fetchStockData(ticker: string): Promise<StockData> {
   const upperTicker = ticker.toUpperCase();
+  const url = `${YF_BASE}/v10/finance/quoteSummary/${encodeURIComponent(upperTicker)}?modules=${YF_MODULES}`;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result: any = await yahooFinance.quoteSummary(upperTicker, {
-    modules: [
-      'price',
-      'summaryDetail',
-      'financialData',
-      'defaultKeyStatistics',
-      'incomeStatementHistory',
-      'assetProfile',
-    ],
-  });
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
 
-  const price = result.price;
-  const summaryDetail = result.summaryDetail;
-  const financialData = result.financialData;
-  const keyStats = result.defaultKeyStatistics;
-  const assetProfile = result.assetProfile;
+  if (!res.ok) {
+    throw new Error(
+      res.status === 404
+        ? `No results found for ticker: ${upperTicker}`
+        : `Failed to fetch data for ticker: ${upperTicker}`
+    );
+  }
 
+  const json = await res.json();
+
+  const yfError = json?.quoteSummary?.error;
+  if (yfError) {
+    const desc: string = yfError.description || '';
+    const lower = desc.toLowerCase();
+    throw new Error(
+      lower.includes('no results') || lower.includes('not found')
+        ? `No results found for ticker: ${upperTicker}`
+        : desc || `Invalid ticker: ${upperTicker}`
+    );
+  }
+
+  const result = json?.quoteSummary?.result?.[0];
+  if (!result) {
+    throw new Error(`No results found for ticker: ${upperTicker}`);
+  }
+
+  const price = result.price ?? {};
+  const summaryDetail = result.summaryDetail ?? {};
+  const financialData = result.financialData ?? {};
+  const keyStats = result.defaultKeyStatistics ?? {};
+  const assetProfile = result.assetProfile ?? {};
+
+  // The Yahoo Finance v10 API wraps numeric values in { raw, fmt } objects.
   const safeNum = (v: unknown): number | null => {
     if (v === null || v === undefined) return null;
+    if (typeof v === 'object' && v !== null && 'raw' in v) {
+      v = (v as { raw: unknown }).raw;
+    }
     const n = Number(v);
     return isNaN(n) ? null : n;
   };
 
+  // String fields are returned as plain strings; date/numeric fields as { raw, fmt }.
   const safeStr = (v: unknown): string | null => {
     if (v === null || v === undefined) return null;
-    return String(v);
+    if (typeof v === 'string') return v === '' ? null : v;
+    if (typeof v === 'object' && v !== null && 'fmt' in v) {
+      const fmt = (v as { fmt: unknown }).fmt;
+      return fmt ? String(fmt) : null;
+    }
+    return null;
   };
 
+  // Date fields come as { raw: epochSeconds, fmt: 'YYYY-MM-DD' }.
   const formatDate = (v: unknown): string | null => {
     if (!v) return null;
-    try {
-      return new Date(v as string | number).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    } catch {
-      return null;
+    let epoch: number | null = null;
+    if (typeof v === 'object' && v !== null && 'raw' in v) {
+      epoch = Number((v as { raw: unknown }).raw);
+    } else {
+      const n = Number(v);
+      if (!isNaN(n)) epoch = n;
     }
+    if (epoch !== null) {
+      try {
+        return new Date(epoch * 1000).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+      } catch {
+        return null;
+      }
+    }
+    return null;
   };
 
-  const priceVal = safeNum(price?.regularMarketPrice);
-  const prevClose = safeNum(price?.regularMarketPreviousClose);
-  const priceChgPct = safeNum(price?.regularMarketChangePercent);
-  const priceChg = safeNum(price?.regularMarketChange);
+  const priceVal = safeNum(price.regularMarketPrice);
+  const prevClose = safeNum(price.regularMarketPreviousClose);
+  const priceChgPct = safeNum(price.regularMarketChangePercent);
+  const priceChg = safeNum(price.regularMarketChange);
 
   // Revenue from income statement history
   let revenue: number | null = null;
@@ -105,9 +150,9 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
   try {
     const stmts = result.incomeStatementHistory?.incomeStatementHistory;
     if (stmts && stmts.length > 0) {
-      revenue = safeNum((stmts[0] as Record<string, unknown>).totalRevenue);
+      revenue = safeNum(stmts[0].totalRevenue);
       if (stmts.length > 1) {
-        const prevRevenue = safeNum((stmts[1] as Record<string, unknown>).totalRevenue);
+        const prevRevenue = safeNum(stmts[1].totalRevenue);
         if (revenue != null && prevRevenue != null && prevRevenue !== 0) {
           revenueGrowth = (revenue - prevRevenue) / prevRevenue;
         }
@@ -117,58 +162,54 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
     // fallback
   }
 
-  if (revenue == null) {
-    revenue = safeNum((financialData as Record<string, unknown>)?.totalRevenue);
-  }
-  if (revenueGrowth == null) {
-    revenueGrowth = safeNum((financialData as Record<string, unknown>)?.revenueGrowth);
-  }
+  if (revenue == null) revenue = safeNum(financialData.totalRevenue);
+  if (revenueGrowth == null) revenueGrowth = safeNum(financialData.revenueGrowth);
 
   return {
     ticker: upperTicker,
-    name: safeStr(price?.longName || price?.shortName) || upperTicker,
-    sector: safeStr((assetProfile as Record<string, unknown>)?.sector) || 'Technology',
-    industry: safeStr((assetProfile as Record<string, unknown>)?.industry) || 'Unknown',
-    exchange: safeStr(price?.exchangeName) || 'NASDAQ',
-    currency: safeStr(price?.currency) || 'USD',
-    description: safeStr((assetProfile as Record<string, unknown>)?.longBusinessSummary) || 'Not publicly disclosed',
+    name: safeStr(price.longName ?? price.shortName) || upperTicker,
+    sector: safeStr(assetProfile.sector) || 'Technology',
+    industry: safeStr(assetProfile.industry) || 'Unknown',
+    exchange: safeStr(price.exchangeName) || 'NASDAQ',
+    currency: safeStr(price.currency) || 'USD',
+    description: safeStr(assetProfile.longBusinessSummary) || 'Not publicly disclosed',
     price: priceVal,
     previousClose: prevClose,
     priceChange: priceChg,
     priceChangePercent: priceChgPct != null ? priceChgPct * 100 : null,
-    marketCap: safeNum(price?.marketCap),
-    enterpriseValue: safeNum((keyStats as Record<string, unknown>)?.enterpriseValue),
+    marketCap: safeNum(price.marketCap),
+    enterpriseValue: safeNum(keyStats.enterpriseValue),
     revenue,
     revenueGrowth,
-    grossMargin: safeNum((financialData as Record<string, unknown>)?.grossMargins),
-    operatingMargin: safeNum((financialData as Record<string, unknown>)?.operatingMargins),
-    profitMargin: safeNum((financialData as Record<string, unknown>)?.profitMargins),
-    netIncome: safeNum((financialData as Record<string, unknown>)?.netIncomeToCommon),
-    ebitda: safeNum((financialData as Record<string, unknown>)?.ebitda),
-    cash: safeNum((financialData as Record<string, unknown>)?.totalCash),
-    totalDebt: safeNum((financialData as Record<string, unknown>)?.totalDebt),
-    debtToEquity: safeNum((financialData as Record<string, unknown>)?.debtToEquity),
-    peRatio: safeNum(summaryDetail?.trailingPE),
-    psRatio: safeNum((keyStats as Record<string, unknown>)?.priceToSalesTrailing12Months),
-    pbRatio: safeNum((keyStats as Record<string, unknown>)?.priceToBook),
-    forwardPE: safeNum(summaryDetail?.forwardPE),
-    pegRatio: safeNum((keyStats as Record<string, unknown>)?.pegRatio),
-    eps: safeNum((keyStats as Record<string, unknown>)?.trailingEps),
-    forwardEps: safeNum((keyStats as Record<string, unknown>)?.forwardEps),
-    dividendYield: safeNum(summaryDetail?.dividendYield),
-    fiftyTwoWeekHigh: safeNum(summaryDetail?.fiftyTwoWeekHigh),
-    fiftyTwoWeekLow: safeNum(summaryDetail?.fiftyTwoWeekLow),
-    fiftyDayAvg: safeNum(summaryDetail?.fiftyDayAverage),
-    twoHundredDayAvg: safeNum(summaryDetail?.twoHundredDayAverage),
-    ytdReturn: safeNum((keyStats as Record<string, unknown>)?.ytdReturn),
-    beta: safeNum(summaryDetail?.beta),
-    sharesOutstanding: safeNum((keyStats as Record<string, unknown>)?.sharesOutstanding),
-    floatShares: safeNum((keyStats as Record<string, unknown>)?.floatShares),
-    shortRatio: safeNum((keyStats as Record<string, unknown>)?.shortRatio),
-    lastEarningsDate: formatDate((keyStats as Record<string, unknown>)?.lastEpsDate || (keyStats as Record<string, unknown>)?.mostRecentQuarter),
-    employees: safeNum((assetProfile as Record<string, unknown>)?.fullTimeEmployees),
+    grossMargin: safeNum(financialData.grossMargins),
+    operatingMargin: safeNum(financialData.operatingMargins),
+    profitMargin: safeNum(financialData.profitMargins),
+    netIncome: safeNum(financialData.netIncomeToCommon),
+    ebitda: safeNum(financialData.ebitda),
+    cash: safeNum(financialData.totalCash),
+    totalDebt: safeNum(financialData.totalDebt),
+    debtToEquity: safeNum(financialData.debtToEquity),
+    peRatio: safeNum(summaryDetail.trailingPE),
+    psRatio: safeNum(keyStats.priceToSalesTrailing12Months),
+    pbRatio: safeNum(keyStats.priceToBook),
+    forwardPE: safeNum(summaryDetail.forwardPE),
+    pegRatio: safeNum(keyStats.pegRatio),
+    eps: safeNum(keyStats.trailingEps),
+    forwardEps: safeNum(keyStats.forwardEps),
+    dividendYield: safeNum(summaryDetail.dividendYield),
+    fiftyTwoWeekHigh: safeNum(summaryDetail.fiftyTwoWeekHigh),
+    fiftyTwoWeekLow: safeNum(summaryDetail.fiftyTwoWeekLow),
+    fiftyDayAvg: safeNum(summaryDetail.fiftyDayAverage),
+    twoHundredDayAvg: safeNum(summaryDetail.twoHundredDayAverage),
+    ytdReturn: safeNum(keyStats.ytdReturn),
+    beta: safeNum(summaryDetail.beta),
+    sharesOutstanding: safeNum(keyStats.sharesOutstanding),
+    floatShares: safeNum(keyStats.floatShares),
+    shortRatio: safeNum(keyStats.shortRatio),
+    lastEarningsDate: formatDate(keyStats.lastEpsDate ?? keyStats.mostRecentQuarter),
+    employees: safeNum(assetProfile.fullTimeEmployees),
     founded: null,
-    website: safeStr((assetProfile as Record<string, unknown>)?.website),
-    country: safeStr((assetProfile as Record<string, unknown>)?.country),
+    website: safeStr(assetProfile.website),
+    country: safeStr(assetProfile.country),
   };
 }

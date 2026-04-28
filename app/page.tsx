@@ -5,12 +5,7 @@ import InfographicPage1 from '@/components/InfographicPage1';
 import InfographicPage2 from '@/components/InfographicPage2';
 import { StockData } from '@/lib/stockData';
 import { CryptoData } from '@/lib/cryptoData';
-
-interface ResearchResult {
-  type: 'stock' | 'crypto';
-  data: StockData | CryptoData;
-  assetClass: string;
-}
+import { researchAsset, ResearchResult } from '@/lib/research';
 
 const EXAMPLE_TICKERS = [
   { label: 'NVDA', desc: 'AI Chip Stock' },
@@ -33,19 +28,13 @@ export default function Home() {
     setResult(null);
 
     try {
-      const res = await fetch(`/api/research?q=${encodeURIComponent(q.trim())}`);
-      const json = await res.json();
-
-      if (!res.ok) {
-        setError(json.error || 'Failed to fetch data');
-      } else {
-        setResult(json);
-        setTimeout(() => {
-          resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
-      }
-    } catch {
-      setError('Network error. Please try again.');
+      const data = await researchAsset(q.trim());
+      setResult(data);
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch data. Please try again.');
     } finally {
       setLoading(false);
     }

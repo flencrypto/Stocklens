@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { detectAssetType } from '@/lib/assetDetector';
 import { fetchStockData, StockData } from '@/lib/stockData';
 import { fetchCryptoData, CryptoData } from '@/lib/cryptoData';
+
+export interface ResearchResult {
+  type: 'stock' | 'crypto';
+  data: StockData | CryptoData;
+  assetClass: string;
+}
 
 function classifyStockAsset(data: StockData): string {
   const sector = (data.sector || '').toLowerCase();
@@ -10,8 +15,7 @@ function classifyStockAsset(data: StockData): string {
 
   if (
     name.includes('nvidia') ||
-    name.includes('ai chip') ||
-    industry.includes('semiconductor') && (name.includes('gpu') || name.includes('ai'))
+    (industry.includes('semiconductor') && (name.includes('gpu') || name.includes('ai')))
   ) {
     return 'AI Infrastructure Stock';
   }
@@ -90,68 +94,51 @@ function classifyCryptoAsset(data: CryptoData): string {
   return 'Crypto Asset';
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const q = searchParams.get('q');
-
-  if (!q || q.trim() === '') {
-    return NextResponse.json({ error: 'Missing query parameter: q' }, { status: 400 });
+/**
+ * Resolves a ticker / symbol / contract address to a ResearchResult.
+ * Throws a descriptive Error if the asset cannot be found.
+ */
+export async function researchAsset(query: string): Promise<ResearchResult> {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    throw new Error('Missing query');
   }
 
-  const query = q.trim();
-  const assetType = detectAssetType(query);
-
-  // 'contract' is treated as crypto
+  const assetType = detectAssetType(trimmed);
   const isCrypto = assetType === 'crypto' || assetType === 'contract';
 
-  try {
-    if (isCrypto) {
-      try {
-        const data = await fetchCryptoData(query);
-        const assetClass = classifyCryptoAsset(data);
-        return NextResponse.json({ type: 'crypto', data, assetClass });
-      } catch (cryptoErr) {
-        // If crypto fetch fails and it wasn't a contract, try stock
-        if (assetType !== 'contract') {
-          try {
-            const data = await fetchStockData(query);
-            const assetClass = classifyStockAsset(data);
-            return NextResponse.json({ type: 'stock', data, assetClass });
-          } catch {
-            throw cryptoErr;
-          }
-        }
-        throw cryptoErr;
-      }
-    } else {
-      try {
-        const data = await fetchStockData(query);
-        const assetClass = classifyStockAsset(data);
-        return NextResponse.json({ type: 'stock', data, assetClass });
-      } catch (stockErr) {
-        // Try crypto as fallback
+  if (isCrypto) {
+    try {
+      const data = await fetchCryptoData(trimmed);
+      const assetClass = classifyCryptoAsset(data);
+      return { type: 'crypto', data, assetClass };
+    } catch (cryptoErr) {
+      // If crypto fetch fails and it wasn't a contract, try stock as fallback
+      if (assetType !== 'contract') {
         try {
-          const data = await fetchCryptoData(query);
-          const assetClass = classifyCryptoAsset(data);
-          return NextResponse.json({ type: 'crypto', data, assetClass });
+          const data = await fetchStockData(trimmed);
+          const assetClass = classifyStockAsset(data);
+          return { type: 'stock', data, assetClass };
         } catch {
-          throw stockErr;
+          throw cryptoErr;
         }
+      }
+      throw cryptoErr;
+    }
+  } else {
+    try {
+      const data = await fetchStockData(trimmed);
+      const assetClass = classifyStockAsset(data);
+      return { type: 'stock', data, assetClass };
+    } catch (stockErr) {
+      // Try crypto as fallback
+      try {
+        const data = await fetchCryptoData(trimmed);
+        const assetClass = classifyCryptoAsset(data);
+        return { type: 'crypto', data, assetClass };
+      } catch {
+        throw stockErr;
       }
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    const lower = message.toLowerCase();
-    // Map client/input errors to appropriate HTTP status codes
-    const status =
-      lower.includes('not found') || lower.includes('no results') || lower.includes('invalid ticker')
-        ? 404
-        : lower.includes('invalid') || lower.includes('bad request') || lower.includes('contract address')
-        ? 400
-        : 500;
-    return NextResponse.json(
-      { error: `Failed to fetch data for "${query}": ${message}` },
-      { status }
-    );
   }
 }
