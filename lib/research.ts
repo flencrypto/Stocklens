@@ -1,11 +1,18 @@
 import { detectAssetType } from '@/lib/assetDetector';
 import { fetchStockData, StockData } from '@/lib/stockData';
 import { fetchCryptoData, CryptoData } from '@/lib/cryptoData';
+import { generateInsights, AssetInsights } from '@/lib/insights';
 
 export interface ResearchResult {
   type: 'stock' | 'crypto';
   data: StockData | CryptoData;
   assetClass: string;
+  insights?: AssetInsights;
+  insightsError?: string;
+}
+
+export interface ResearchOptions {
+  openaiApiKey?: string;
 }
 
 function classifyStockAsset(data: StockData): string {
@@ -98,7 +105,10 @@ function classifyCryptoAsset(data: CryptoData): string {
  * Resolves a ticker / symbol / contract address to a ResearchResult.
  * Throws a descriptive Error if the asset cannot be found.
  */
-export async function researchAsset(query: string): Promise<ResearchResult> {
+export async function researchAsset(
+  query: string,
+  options: ResearchOptions = {},
+): Promise<ResearchResult> {
   const trimmed = query.trim();
   if (!trimmed) {
     throw new Error('Missing query');
@@ -107,38 +117,51 @@ export async function researchAsset(query: string): Promise<ResearchResult> {
   const assetType = detectAssetType(trimmed);
   const isCrypto = assetType === 'crypto' || assetType === 'contract';
 
+  let result: ResearchResult;
+
   if (isCrypto) {
     try {
       const data = await fetchCryptoData(trimmed);
-      const assetClass = classifyCryptoAsset(data);
-      return { type: 'crypto', data, assetClass };
+      result = { type: 'crypto', data, assetClass: classifyCryptoAsset(data) };
     } catch (cryptoErr) {
       // If crypto fetch fails and it wasn't a contract, try stock as fallback
       if (assetType !== 'contract') {
         try {
           const data = await fetchStockData(trimmed);
-          const assetClass = classifyStockAsset(data);
-          return { type: 'stock', data, assetClass };
+          result = { type: 'stock', data, assetClass: classifyStockAsset(data) };
         } catch {
           throw cryptoErr;
         }
+      } else {
+        throw cryptoErr;
       }
-      throw cryptoErr;
     }
   } else {
     try {
       const data = await fetchStockData(trimmed);
-      const assetClass = classifyStockAsset(data);
-      return { type: 'stock', data, assetClass };
+      result = { type: 'stock', data, assetClass: classifyStockAsset(data) };
     } catch (stockErr) {
       // Try crypto as fallback
       try {
         const data = await fetchCryptoData(trimmed);
-        const assetClass = classifyCryptoAsset(data);
-        return { type: 'crypto', data, assetClass };
+        result = { type: 'crypto', data, assetClass: classifyCryptoAsset(data) };
       } catch {
         throw stockErr;
       }
     }
   }
+
+  // If an OpenAI API key is provided, enrich the result with AI-generated
+  // insights. Failures here are non-fatal — the UI falls back to heuristic
+  // insights and surfaces the error message.
+  const apiKey = options.openaiApiKey?.trim();
+  if (apiKey) {
+    try {
+      result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
+    } catch (err) {
+      result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
+    }
+  }
+
+  return result;
 }
