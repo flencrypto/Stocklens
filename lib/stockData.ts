@@ -56,6 +56,71 @@ const YF_MODULES = [
   'assetProfile',
 ].join(',');
 
+export interface StockSearchResult {
+  symbol: string;
+  name: string;
+  exchange: string;
+  type: string;
+}
+
+/**
+ * Search Yahoo Finance for stocks/equities/funds matching the query. Returns
+ * up to `limit` candidates including newly listed / IPO equities. Throws on
+ * network errors; returns an empty array when no matches are found.
+ */
+export async function searchStocks(
+  query: string,
+  limit = 10,
+): Promise<StockSearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const url =
+    `${YF_BASE}/v1/finance/search?q=${encodeURIComponent(trimmed)}` +
+    `&quotesCount=${limit}&newsCount=0&listsCount=0`;
+
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) {
+    throw new Error(`Failed to search stocks for: ${trimmed}`);
+  }
+
+  const json = await res.json();
+  const quotes: Array<Record<string, unknown>> = json?.quotes ?? [];
+
+  // Equity-like quote types we want to surface (stocks, ETFs, funds, indices).
+  // Pre-IPO and newly listed names show up here as soon as Yahoo indexes them.
+  // CRYPTOCURRENCY is filtered out separately just below.
+  const allowed = new Set(['EQUITY', 'ETF', 'MUTUALFUND', 'INDEX']);
+
+  const results: StockSearchResult[] = [];
+  for (const q of quotes) {
+    const symbol = typeof q.symbol === 'string' ? q.symbol : '';
+    if (!symbol) continue;
+    const quoteType = typeof q.quoteType === 'string' ? q.quoteType : '';
+    // Exclude crypto from the stock search results explicitly.
+    if (quoteType === 'CRYPTOCURRENCY') continue;
+    // If quoteType is provided and not in the allowed list, skip.
+    if (quoteType && !allowed.has(quoteType)) continue;
+
+    const name =
+      (typeof q.longname === 'string' && q.longname) ||
+      (typeof q.shortname === 'string' && q.shortname) ||
+      symbol;
+    const exchange =
+      (typeof q.exchDisp === 'string' && q.exchDisp) ||
+      (typeof q.exchange === 'string' && q.exchange) ||
+      '';
+    const type =
+      (typeof q.typeDisp === 'string' && q.typeDisp) ||
+      quoteType ||
+      'Equity';
+
+    results.push({ symbol, name: String(name), exchange, type });
+  }
+
+  return results;
+}
+
 export async function fetchStockData(ticker: string): Promise<StockData> {
   const upperTicker = ticker.toUpperCase();
   const url = `${YF_BASE}/v10/finance/quoteSummary/${encodeURIComponent(upperTicker)}?modules=${YF_MODULES}`;
