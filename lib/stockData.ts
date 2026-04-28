@@ -47,14 +47,31 @@ export interface StockData {
 }
 
 const YF_BASE = 'https://query1.finance.yahoo.com';
-const YF_MODULES = [
-  'price',
-  'summaryDetail',
-  'financialData',
-  'defaultKeyStatistics',
-  'incomeStatementHistory',
-  'assetProfile',
-].join(',');
+
+// Yahoo Finance APIs do not send CORS headers, and the v10 `quoteSummary`
+// endpoint additionally requires a "crumb" cookie/auth token that cannot
+// be obtained from the browser. Because Stocklens is deployed as a static
+// site (GitHub Pages, `next build` -> `./out`), we have no backend of our
+// own to proxy through, so we route Yahoo Finance requests through a
+// public CORS-enabled relay. allorigins.win returns the upstream body
+// untouched and sets `Access-Control-Allow-Origin` correctly.
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+
+function proxiedYahooUrl(yahooUrl: string): string {
+  return `${CORS_PROXY}${encodeURIComponent(yahooUrl)}`;
+}
+
+async function fetchYahooJson(yahooUrl: string): Promise<unknown> {
+  const res = await fetch(proxiedYahooUrl(yahooUrl), {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`) as Error & { status: number };
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
 
 export interface StockSearchResult {
   symbol: string;
@@ -75,17 +92,18 @@ export async function searchStocks(
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const url =
+  const yahooUrl =
     `${YF_BASE}/v1/finance/search?q=${encodeURIComponent(trimmed)}` +
     `&quotesCount=${limit}&newsCount=0&listsCount=0`;
 
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) {
+  let json: Record<string, unknown>;
+  try {
+    json = (await fetchYahooJson(yahooUrl)) as Record<string, unknown>;
+  } catch {
     throw new Error(`Failed to search stocks for: ${trimmed}`);
   }
-
-  const json = await res.json();
-  const quotes: Array<Record<string, unknown>> = json?.quotes ?? [];
+  const quotes: Array<Record<string, unknown>> =
+    (json?.quotes as Array<Record<string, unknown>>) ?? [];
 
   // Equity-like quote types we want to surface (stocks, ETFs, funds, indices).
   // Pre-IPO and newly listed names show up here as soon as Yahoo indexes them.
@@ -121,160 +139,149 @@ export async function searchStocks(
   return results;
 }
 
+interface YahooChartMeta {
+  currency?: string;
+  symbol?: string;
+  exchangeName?: string;
+  fullExchangeName?: string;
+  instrumentType?: string;
+  regularMarketPrice?: number;
+  chartPreviousClose?: number;
+  previousClose?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+  regularMarketDayHigh?: number;
+  regularMarketDayLow?: number;
+  regularMarketVolume?: number;
+  longName?: string;
+  shortName?: string;
+}
+
+interface YahooChartError {
+  code?: string;
+  description?: string;
+}
+
+interface YahooChartResponse {
+  chart?: {
+    result?: Array<{ meta?: YahooChartMeta }> | null;
+    error?: YahooChartError | null;
+  };
+}
+
 export async function fetchStockData(ticker: string): Promise<StockData> {
   const upperTicker = ticker.toUpperCase();
-  const url = `${YF_BASE}/v10/finance/quoteSummary/${encodeURIComponent(upperTicker)}?modules=${YF_MODULES}`;
+  // Yahoo's v10 /quoteSummary endpoint requires a "crumb" cookie/auth token
+  // that browsers cannot obtain (and it's blocked by CORS anyway). The v8
+  // /chart endpoint is unauthenticated and proxiable, so we use it for the
+  // basic price/exchange/52-week metadata and leave the deeper financial
+  // fields as null (the UI already handles missing values gracefully).
+  const yahooUrl = `${YF_BASE}/v8/finance/chart/${encodeURIComponent(upperTicker)}?interval=1d&range=1d`;
 
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-
-  if (!res.ok) {
+  let json: YahooChartResponse;
+  try {
+    json = (await fetchYahooJson(yahooUrl)) as YahooChartResponse;
+  } catch (err) {
+    const status = (err as { status?: number } | null)?.status;
     throw new Error(
-      res.status === 404
+      status === 404
         ? `No results found for ticker: ${upperTicker}`
-        : `Failed to fetch data for ticker: ${upperTicker}`
+        : `Failed to fetch data for ticker: ${upperTicker}`,
     );
   }
 
-  const json = await res.json();
-
-  const yfError = json?.quoteSummary?.error;
+  const yfError = json?.chart?.error;
   if (yfError) {
     const desc: string = yfError.description || '';
     const lower = desc.toLowerCase();
     throw new Error(
       lower.includes('no results') || lower.includes('not found')
         ? `No results found for ticker: ${upperTicker}`
-        : desc || `Invalid ticker: ${upperTicker}`
+        : desc || `Invalid ticker: ${upperTicker}`,
     );
   }
 
-  const result = json?.quoteSummary?.result?.[0];
-  if (!result) {
+  const meta = json?.chart?.result?.[0]?.meta;
+  if (!meta) {
     throw new Error(`No results found for ticker: ${upperTicker}`);
   }
 
-  const price = result.price ?? {};
-  const summaryDetail = result.summaryDetail ?? {};
-  const financialData = result.financialData ?? {};
-  const keyStats = result.defaultKeyStatistics ?? {};
-  const assetProfile = result.assetProfile ?? {};
-
-  // The Yahoo Finance v10 API wraps numeric values in { raw, fmt } objects.
   const safeNum = (v: unknown): number | null => {
     if (v === null || v === undefined) return null;
-    if (typeof v === 'object' && v !== null && 'raw' in v) {
-      v = (v as { raw: unknown }).raw;
-    }
     const n = Number(v);
     return isNaN(n) ? null : n;
   };
 
-  // String fields are returned as plain strings; date/numeric fields as { raw, fmt }.
-  const safeStr = (v: unknown): string | null => {
-    if (v === null || v === undefined) return null;
-    if (typeof v === 'string') return v === '' ? null : v;
-    if (typeof v === 'object' && v !== null && 'fmt' in v) {
-      const fmt = (v as { fmt: unknown }).fmt;
-      return fmt ? String(fmt) : null;
-    }
-    return null;
-  };
-
-  // Date fields come as { raw: epochSeconds, fmt: 'YYYY-MM-DD' }.
-  const formatDate = (v: unknown): string | null => {
-    if (!v) return null;
-    let epoch: number | null = null;
-    if (typeof v === 'object' && v !== null && 'raw' in v) {
-      epoch = Number((v as { raw: unknown }).raw);
-    } else {
-      const n = Number(v);
-      if (!isNaN(n)) epoch = n;
-    }
-    if (epoch !== null) {
-      try {
-        return new Date(epoch * 1000).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        });
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  };
-
-  const priceVal = safeNum(price.regularMarketPrice);
-  const prevClose = safeNum(price.regularMarketPreviousClose);
-  const priceChgPct = safeNum(price.regularMarketChangePercent);
-  const priceChg = safeNum(price.regularMarketChange);
-
-  // Revenue from income statement history
-  let revenue: number | null = null;
-  let revenueGrowth: number | null = null;
-  try {
-    const stmts = result.incomeStatementHistory?.incomeStatementHistory;
-    if (stmts && stmts.length > 0) {
-      revenue = safeNum(stmts[0].totalRevenue);
-      if (stmts.length > 1) {
-        const prevRevenue = safeNum(stmts[1].totalRevenue);
-        if (revenue != null && prevRevenue != null && prevRevenue !== 0) {
-          revenueGrowth = (revenue - prevRevenue) / prevRevenue;
-        }
-      }
-    }
-  } catch {
-    // fallback
+  const priceVal = safeNum(meta.regularMarketPrice);
+  const prevClose = safeNum(meta.previousClose ?? meta.chartPreviousClose);
+  let priceChg: number | null = null;
+  let priceChgPct: number | null = null;
+  if (priceVal != null && prevClose != null && prevClose !== 0) {
+    priceChg = priceVal - prevClose;
+    priceChgPct = (priceChg / prevClose) * 100;
   }
 
-  if (revenue == null) revenue = safeNum(financialData.totalRevenue);
-  if (revenueGrowth == null) revenueGrowth = safeNum(financialData.revenueGrowth);
+  const name =
+    (typeof meta.longName === 'string' && meta.longName) ||
+    (typeof meta.shortName === 'string' && meta.shortName) ||
+    upperTicker;
+  const exchange =
+    (typeof meta.fullExchangeName === 'string' && meta.fullExchangeName) ||
+    (typeof meta.exchangeName === 'string' && meta.exchangeName) ||
+    '';
+  const currency =
+    (typeof meta.currency === 'string' && meta.currency) || 'USD';
 
+  // Most fundamental/financial fields require Yahoo's authenticated
+  // quoteSummary endpoint. They're left null (or marked as unknown for
+  // non-nullable string fields) here; the UI renders sensible fallbacks
+  // for missing values and `classifyStockAsset` falls through to a
+  // generic "Public Equity" label when sector/industry are unknown.
   return {
     ticker: upperTicker,
-    name: safeStr(price.longName ?? price.shortName) || upperTicker,
-    sector: safeStr(assetProfile.sector) || 'Technology',
-    industry: safeStr(assetProfile.industry) || 'Unknown',
-    exchange: safeStr(price.exchangeName) || 'NASDAQ',
-    currency: safeStr(price.currency) || 'USD',
-    description: safeStr(assetProfile.longBusinessSummary) || 'Not publicly disclosed',
+    name,
+    sector: 'Unknown',
+    industry: 'Unknown',
+    exchange,
+    currency,
+    description: 'Description unavailable',
     price: priceVal,
     previousClose: prevClose,
     priceChange: priceChg,
-    priceChangePercent: priceChgPct != null ? priceChgPct * 100 : null,
-    marketCap: safeNum(price.marketCap),
-    enterpriseValue: safeNum(keyStats.enterpriseValue),
-    revenue,
-    revenueGrowth,
-    grossMargin: safeNum(financialData.grossMargins),
-    operatingMargin: safeNum(financialData.operatingMargins),
-    profitMargin: safeNum(financialData.profitMargins),
-    netIncome: safeNum(financialData.netIncomeToCommon),
-    ebitda: safeNum(financialData.ebitda),
-    cash: safeNum(financialData.totalCash),
-    totalDebt: safeNum(financialData.totalDebt),
-    debtToEquity: safeNum(financialData.debtToEquity),
-    peRatio: safeNum(summaryDetail.trailingPE),
-    psRatio: safeNum(keyStats.priceToSalesTrailing12Months),
-    pbRatio: safeNum(keyStats.priceToBook),
-    forwardPE: safeNum(summaryDetail.forwardPE),
-    pegRatio: safeNum(keyStats.pegRatio),
-    eps: safeNum(keyStats.trailingEps),
-    forwardEps: safeNum(keyStats.forwardEps),
-    dividendYield: safeNum(summaryDetail.dividendYield),
-    fiftyTwoWeekHigh: safeNum(summaryDetail.fiftyTwoWeekHigh),
-    fiftyTwoWeekLow: safeNum(summaryDetail.fiftyTwoWeekLow),
-    fiftyDayAvg: safeNum(summaryDetail.fiftyDayAverage),
-    twoHundredDayAvg: safeNum(summaryDetail.twoHundredDayAverage),
-    ytdReturn: safeNum(keyStats.ytdReturn),
-    beta: safeNum(summaryDetail.beta),
-    sharesOutstanding: safeNum(keyStats.sharesOutstanding),
-    floatShares: safeNum(keyStats.floatShares),
-    shortRatio: safeNum(keyStats.shortRatio),
-    lastEarningsDate: formatDate(keyStats.lastEpsDate ?? keyStats.mostRecentQuarter),
-    employees: safeNum(assetProfile.fullTimeEmployees),
+    priceChangePercent: priceChgPct,
+    marketCap: null,
+    enterpriseValue: null,
+    revenue: null,
+    revenueGrowth: null,
+    grossMargin: null,
+    operatingMargin: null,
+    profitMargin: null,
+    netIncome: null,
+    ebitda: null,
+    cash: null,
+    totalDebt: null,
+    debtToEquity: null,
+    peRatio: null,
+    psRatio: null,
+    pbRatio: null,
+    forwardPE: null,
+    pegRatio: null,
+    eps: null,
+    forwardEps: null,
+    dividendYield: null,
+    fiftyTwoWeekHigh: safeNum(meta.fiftyTwoWeekHigh),
+    fiftyTwoWeekLow: safeNum(meta.fiftyTwoWeekLow),
+    fiftyDayAvg: null,
+    twoHundredDayAvg: null,
+    ytdReturn: null,
+    beta: null,
+    sharesOutstanding: null,
+    floatShares: null,
+    shortRatio: null,
+    lastEarningsDate: null,
+    employees: null,
     founded: null,
-    website: safeStr(assetProfile.website),
-    country: safeStr(assetProfile.country),
+    website: null,
+    country: null,
   };
 }
