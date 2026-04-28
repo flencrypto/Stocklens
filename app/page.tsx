@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import InfographicPage1 from '@/components/InfographicPage1';
 import InfographicPage2 from '@/components/InfographicPage2';
 import { StockData } from '@/lib/stockData';
@@ -14,12 +14,46 @@ const EXAMPLE_TICKERS = [
   { label: '0xba83b5ed3f12Bfa44f066f03eE0433419B74f469', desc: 'ETH Contract' },
 ];
 
+const OPENAI_KEY_STORAGE = 'stocklens.openaiApiKey';
+
 export default function Home() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [showKeyInput, setShowKeyInput] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Load any previously saved key on mount. Falls back to a build-time env
+  // var (NEXT_PUBLIC_OPENAI_API_KEY) so the app can be configured at deploy
+  // time too.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(OPENAI_KEY_STORAGE);
+      if (saved) {
+        setOpenaiKey(saved);
+        return;
+      }
+    } catch {
+      // ignore localStorage errors (e.g. private mode)
+    }
+    const envKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+    if (envKey) setOpenaiKey(envKey);
+  }, []);
+
+  const handleKeyChange = (value: string) => {
+    setOpenaiKey(value);
+    try {
+      if (value.trim()) {
+        window.localStorage.setItem(OPENAI_KEY_STORAGE, value.trim());
+      } else {
+        window.localStorage.removeItem(OPENAI_KEY_STORAGE);
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const handleSearch = async (q: string) => {
     if (!q.trim()) return;
@@ -28,7 +62,7 @@ export default function Home() {
     setResult(null);
 
     try {
-      const data = await researchAsset(q.trim());
+      const data = await researchAsset(q.trim(), { openaiApiKey: openaiKey });
       setResult(data);
       setTimeout(() => {
         resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -136,6 +170,49 @@ export default function Home() {
           ))}
         </div>
 
+        {/* OpenAI API Key */}
+        <div className="max-w-xl mx-auto mt-4 text-center">
+          <button
+            type="button"
+            onClick={() => setShowKeyInput((v) => !v)}
+            className="text-[11px] text-slate-500 hover:text-slate-300 uppercase tracking-widest"
+          >
+            {openaiKey
+              ? '🤖 OpenAI key set — AI insights enabled (edit)'
+              : '🤖 Add OpenAI API key for AI-generated insights'}
+          </button>
+          {showKeyInput && (
+            <div className="mt-2 flex gap-2 items-center">
+              <input
+                type="password"
+                value={openaiKey}
+                onChange={(e) => handleKeyChange(e.target.value)}
+                placeholder="sk-..."
+                autoComplete="off"
+                spellCheck={false}
+                className="flex-1 px-3 py-2 rounded-lg text-slate-100 text-xs outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                style={{ background: '#0D1422', border: '1px solid #1E2D47' }}
+              />
+              {openaiKey && (
+                <button
+                  type="button"
+                  onClick={() => handleKeyChange('')}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold text-slate-300"
+                  style={{ background: '#0D1422', border: '1px solid #1E2D47' }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+          {showKeyInput && (
+            <p className="text-[10px] text-slate-600 mt-2">
+              Stored only in your browser&apos;s localStorage. The key is sent directly to
+              api.openai.com from your browser and is never transmitted to our servers.
+            </p>
+          )}
+        </div>
+
         {/* Error */}
         {error && (
           <div
@@ -176,6 +253,14 @@ export default function Home() {
               <p className="text-xs text-slate-500">
                 Generated from live {result.type === 'stock' ? 'Yahoo Finance' : 'CoinGecko'} data ·{' '}
                 {result.assetClass}
+                {result.insights && (
+                  <span className="ml-2 text-purple-400">· 🤖 AI insights via OpenAI</span>
+                )}
+                {result.insightsError && (
+                  <span className="ml-2 text-amber-400" title={result.insightsError}>
+                    · AI insights unavailable
+                  </span>
+                )}
               </p>
             </div>
             <button
@@ -198,6 +283,7 @@ export default function Home() {
                 type={result.type}
                 data={result.data}
                 assetClass={result.assetClass}
+                insights={result.insights}
               />
             </div>
             <div className="overflow-auto rounded-xl" style={{ border: '1px solid #1E2D47' }}>

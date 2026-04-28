@@ -4,12 +4,14 @@ import React from 'react';
 import DonutChart from './DonutChart';
 import { StockData } from '@/lib/stockData';
 import { CryptoData } from '@/lib/cryptoData';
+import { AssetInsights } from '@/lib/insights';
 import { fmtLarge, fmtPct, fmtPctDirect, pctColor } from '@/lib/format';
 
 interface InfographicPage1Props {
   type: 'stock' | 'crypto';
   data: StockData | CryptoData;
   assetClass: string;
+  insights?: AssetInsights;
 }
 
 // Generate dynamic analysis text
@@ -132,7 +134,7 @@ function generateCatalysts(type: string, data: StockData | CryptoData, assetClas
   }
 }
 
-export default function InfographicPage1({ type, data, assetClass }: InfographicPage1Props) {
+export default function InfographicPage1({ type, data, assetClass, insights }: InfographicPage1Props) {
   const isStock = type === 'stock';
   const stockData = isStock ? (data as StockData) : null;
   const cryptoData = !isStock ? (data as CryptoData) : null;
@@ -140,10 +142,11 @@ export default function InfographicPage1({ type, data, assetClass }: Infographic
   const ticker = isStock ? stockData!.ticker : cryptoData!.symbol;
   const name = isStock ? stockData!.name : cryptoData!.name;
 
-  const thesis = generateThesis(type, data, assetClass);
-  const bullCase = generateBullCase(type, data);
-  const bearCase = generateBearCase(type, data);
-  const catalysts = generateCatalysts(type, data, assetClass);
+  // Prefer AI-generated insights when available; fall back to heuristics.
+  const thesis = insights?.thesis ?? generateThesis(type, data, assetClass);
+  const bullCase = insights?.bullCase ?? generateBullCase(type, data);
+  const bearCase = insights?.bearCase ?? generateBearCase(type, data);
+  const catalysts = insights?.catalysts ?? generateCatalysts(type, data, assetClass);
 
   // Stock financial bar data
   const financialBars = isStock && stockData
