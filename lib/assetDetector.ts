@@ -12,16 +12,6 @@ const KNOWN_CRYPTO_TICKERS = new Set([
   'FET', 'AGIX', 'RNDR', 'WLD', 'TAO', 'TURBO', 'MEME', 'BRETT', 'MOG',
 ]);
 
-const KNOWN_STOCK_TICKERS = new Set([
-  'NVDA', 'AMD', 'INTC', 'TSMC', 'QCOM', 'AVGO', 'AAPL', 'MSFT', 'GOOGL',
-  'GOOG', 'META', 'AMZN', 'TSLA', 'NFLX', 'ORCL', 'CRM', 'ADBE', 'NOW',
-  'SNOW', 'PLTR', 'PANW', 'CRWD', 'ZS', 'OKTA', 'NET', 'DDOG', 'MDB',
-  'COIN', 'HOOD', 'MSTR', 'SMCI', 'ARM', 'ASML', 'AMAT', 'LRCX', 'KLAC',
-  'TXN', 'MU', 'MRVL', 'ON', 'STX', 'WDC', 'HPE', 'DELL', 'IBM', 'CSCO',
-  'JPM', 'GS', 'MS', 'BAC', 'WFC', 'V', 'MA', 'PYPL', 'SQ', 'ADYEY',
-  'SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'XLK', 'XLF', 'XLE',
-]);
-
 export function detectAssetType(input: string): AssetType {
   const trimmed = input.trim();
 
@@ -31,19 +21,12 @@ export function detectAssetType(input: string): AssetType {
 
   const upper = trimmed.toUpperCase();
 
-  if (KNOWN_STOCK_TICKERS.has(upper)) {
-    return 'stock';
-  }
-
   if (KNOWN_CRYPTO_TICKERS.has(upper)) {
     return 'crypto';
   }
 
-  // Heuristics: if it looks like a crypto pattern
-  if (/^[A-Z0-9]{2,10}$/.test(upper) && trimmed.length <= 5) {
-    // Short tickers could be either - default to try crypto first for unknown
-    return 'crypto';
-  }
-
+  // Default unknown tickers to stock so any public equity ticker works out of
+  // the box. The research layer transparently falls back to crypto if the
+  // stock lookup fails, so crypto-only symbols still resolve correctly.
   return 'stock';
 }
