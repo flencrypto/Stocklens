@@ -1,7 +1,20 @@
 import { detectAssetType } from '@/lib/assetDetector';
-import { fetchStockData, StockData } from '@/lib/stockData';
-import { fetchCryptoData, CryptoData } from '@/lib/cryptoData';
+import {
+  fetchStockData,
+  searchStocks,
+  StockData,
+  StockSearchResult,
+} from '@/lib/stockData';
+import {
+  fetchCryptoData,
+  fetchCryptoDataById,
+  searchCryptos,
+  CryptoData,
+  CryptoSearchResult,
+} from '@/lib/cryptoData';
 import { generateInsights, AssetInsights } from '@/lib/insights';
+
+export type SearchMode = 'stock' | 'crypto';
 
 export interface ResearchResult {
   type: 'stock' | 'crypto';
@@ -13,7 +26,22 @@ export interface ResearchResult {
 
 export interface ResearchOptions {
   openaiApiKey?: string;
+  /**
+   * Restrict the lookup to a specific market. When omitted the asset type
+   * is auto-detected (legacy behaviour).
+   */
+  mode?: SearchMode;
 }
+
+interface BaseCandidate {
+  symbol: string;
+  name: string;
+  market: string;
+}
+
+export type SearchCandidate =
+  | (BaseCandidate & { type: 'stock'; quoteType: string })
+  | (BaseCandidate & { type: 'crypto'; id: string; marketCapRank: number | null });
 
 function classifyStockAsset(data: StockData): string {
   const sector = (data.sector || '').toLowerCase();
@@ -102,8 +130,117 @@ function classifyCryptoAsset(data: CryptoData): string {
 }
 
 /**
+ * Search the requested market for candidates matching the user's query.
+ *
+ * - In `stock` mode this hits Yahoo Finance's search API and returns
+ *   equities/ETFs/funds across all exchanges (including newly listed names).
+ * - In `crypto` mode this hits CoinGecko's search API and only returns coins.
+ *   A 0x-prefixed Ethereum contract address is treated as a single direct
+ *   crypto match.
+ *
+ * Throws if the upstream search fails or returns zero results.
+ */
+export async function searchAssetCandidates(
+  query: string,
+  mode: SearchMode,
+): Promise<SearchCandidate[]> {
+  const trimmed = query.trim();
+  if (!trimmed) throw new Error('Missing query');
+
+  if (mode === 'crypto') {
+    // Ethereum contract address: resolve directly, treat as a single match.
+    if (trimmed.startsWith('0x') && /^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+      const data = await fetchCryptoData(trimmed);
+      return [
+        {
+          type: 'crypto',
+          id: data.id,
+          symbol: data.symbol,
+          name: data.name,
+          market: data.chain ? `${data.chain} contract` : 'CoinGecko',
+          marketCapRank: data.marketCapRank,
+        },
+      ];
+    }
+
+    const coins = await searchCryptos(trimmed);
+    if (coins.length === 0) {
+      throw new Error(`No crypto found for: ${trimmed}`);
+    }
+    return coins.map((c: CryptoSearchResult) => ({
+      type: 'crypto' as const,
+      id: c.id,
+      symbol: c.symbol,
+      name: c.name,
+      market: c.marketCapRank ? `CoinGecko · Rank #${c.marketCapRank}` : 'CoinGecko',
+      marketCapRank: c.marketCapRank,
+    }));
+  }
+
+  // Stock mode
+  const quotes = await searchStocks(trimmed);
+  if (quotes.length === 0) {
+    throw new Error(`No stocks found for: ${trimmed}`);
+  }
+  return quotes.map((q: StockSearchResult) => ({
+    type: 'stock' as const,
+    symbol: q.symbol,
+    name: q.name,
+    market: q.exchange || 'Stock Market',
+    quoteType: q.type,
+  }));
+}
+
+async function enrichWithInsights(
+  result: ResearchResult,
+  options: ResearchOptions,
+): Promise<ResearchResult> {
+  const apiKey = options.openaiApiKey?.trim();
+  if (apiKey) {
+    try {
+      result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
+    } catch (err) {
+      result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
+    }
+  }
+  return result;
+}
+
+/**
+ * Fetch the full ResearchResult for a candidate previously returned from
+ * `searchAssetCandidates`. This is the path used after the user disambiguates
+ * between multiple search hits.
+ */
+export async function researchByCandidate(
+  candidate: SearchCandidate,
+  options: ResearchOptions = {},
+): Promise<ResearchResult> {
+  if (candidate.type === 'stock') {
+    const data = await fetchStockData(candidate.symbol);
+    const result: ResearchResult = {
+      type: 'stock',
+      data,
+      assetClass: classifyStockAsset(data),
+    };
+    return enrichWithInsights(result, options);
+  }
+
+  const data = await fetchCryptoDataById(candidate.id);
+  const result: ResearchResult = {
+    type: 'crypto',
+    data,
+    assetClass: classifyCryptoAsset(data),
+  };
+  return enrichWithInsights(result, options);
+}
+
+/**
  * Resolves a ticker / symbol / contract address to a ResearchResult.
  * Throws a descriptive Error if the asset cannot be found.
+ *
+ * When `options.mode` is provided the lookup is constrained to that market
+ * (no cross-market fallback). When omitted, the legacy auto-detect behaviour
+ * is used.
  */
 export async function researchAsset(
   query: string,
@@ -114,54 +251,48 @@ export async function researchAsset(
     throw new Error('Missing query');
   }
 
-  const assetType = detectAssetType(trimmed);
-  const isCrypto = assetType === 'crypto' || assetType === 'contract';
-
   let result: ResearchResult;
 
-  if (isCrypto) {
-    try {
-      const data = await fetchCryptoData(trimmed);
-      result = { type: 'crypto', data, assetClass: classifyCryptoAsset(data) };
-    } catch (cryptoErr) {
-      // If crypto fetch fails and it wasn't a contract, try stock as fallback
-      if (assetType !== 'contract') {
-        try {
-          const data = await fetchStockData(trimmed);
-          result = { type: 'stock', data, assetClass: classifyStockAsset(data) };
-        } catch {
-          throw cryptoErr;
-        }
-      } else {
-        throw cryptoErr;
-      }
-    }
+  if (options.mode === 'stock') {
+    const data = await fetchStockData(trimmed);
+    result = { type: 'stock', data, assetClass: classifyStockAsset(data) };
+  } else if (options.mode === 'crypto') {
+    const data = await fetchCryptoData(trimmed);
+    result = { type: 'crypto', data, assetClass: classifyCryptoAsset(data) };
   } else {
-    try {
-      const data = await fetchStockData(trimmed);
-      result = { type: 'stock', data, assetClass: classifyStockAsset(data) };
-    } catch (stockErr) {
-      // Try crypto as fallback
+    const assetType = detectAssetType(trimmed);
+    const isCrypto = assetType === 'crypto' || assetType === 'contract';
+
+    if (isCrypto) {
       try {
         const data = await fetchCryptoData(trimmed);
         result = { type: 'crypto', data, assetClass: classifyCryptoAsset(data) };
-      } catch {
-        throw stockErr;
+      } catch (cryptoErr) {
+        if (assetType !== 'contract') {
+          try {
+            const data = await fetchStockData(trimmed);
+            result = { type: 'stock', data, assetClass: classifyStockAsset(data) };
+          } catch {
+            throw cryptoErr;
+          }
+        } else {
+          throw cryptoErr;
+        }
+      }
+    } else {
+      try {
+        const data = await fetchStockData(trimmed);
+        result = { type: 'stock', data, assetClass: classifyStockAsset(data) };
+      } catch (stockErr) {
+        try {
+          const data = await fetchCryptoData(trimmed);
+          result = { type: 'crypto', data, assetClass: classifyCryptoAsset(data) };
+        } catch {
+          throw stockErr;
+        }
       }
     }
   }
 
-  // If an OpenAI API key is provided, enrich the result with AI-generated
-  // insights. Failures here are non-fatal — the UI falls back to heuristic
-  // insights and surfaces the error message.
-  const apiKey = options.openaiApiKey?.trim();
-  if (apiKey) {
-    try {
-      result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
-    } catch (err) {
-      result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
-    }
-  }
-
-  return result;
+  return enrichWithInsights(result, options);
 }

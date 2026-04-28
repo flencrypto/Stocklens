@@ -40,6 +40,50 @@ const HEADERS = {
   Accept: 'application/json',
 };
 
+export interface CryptoSearchResult {
+  id: string;
+  symbol: string;
+  name: string;
+  marketCapRank: number | null;
+}
+
+/**
+ * Search CoinGecko for coins matching the query. Returns up to `limit`
+ * candidates ordered as CoinGecko returns them (roughly by relevance/rank).
+ * Throws on network errors; returns an empty array when no matches are found.
+ */
+export async function searchCryptos(
+  query: string,
+  limit = 10,
+): Promise<CryptoSearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const url = `${COINGECKO_BASE}/search?query=${encodeURIComponent(trimmed)}`;
+  const { data } = await axios.get(url, { headers: HEADERS, timeout: 15000 });
+  const coins: Array<{
+    id: string;
+    symbol: string;
+    name: string;
+    market_cap_rank: number | null;
+  }> = data?.coins || [];
+
+  return coins.slice(0, limit).map((c) => ({
+    id: c.id,
+    symbol: (c.symbol || '').toUpperCase(),
+    name: c.name,
+    marketCapRank: c.market_cap_rank ?? null,
+  }));
+}
+
+/**
+ * Fetch full crypto details for a known CoinGecko id (e.g. "bitcoin").
+ * Use this after the user picks a candidate from `searchCryptos`.
+ */
+export async function fetchCryptoDataById(id: string): Promise<CryptoData> {
+  return fetchCoinDetail(id);
+}
+
 async function fetchCoinDetail(id: string): Promise<CryptoData> {
   const url = `${COINGECKO_BASE}/coins/${id}?localization=false&tickers=true&market_data=true&community_data=true&developer_data=false`;
   const { data } = await axios.get(url, { headers: HEADERS, timeout: 15000 });

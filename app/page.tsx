@@ -5,21 +5,29 @@ import InfographicPage1 from '@/components/InfographicPage1';
 import InfographicPage2 from '@/components/InfographicPage2';
 import { StockData } from '@/lib/stockData';
 import { CryptoData } from '@/lib/cryptoData';
-import { researchAsset, ResearchResult } from '@/lib/research';
+import {
+  researchByCandidate,
+  searchAssetCandidates,
+  ResearchResult,
+  SearchCandidate,
+  SearchMode,
+} from '@/lib/research';
 
-const EXAMPLE_TICKERS = [
-  { label: 'NVDA', desc: 'AI Chip Stock' },
-  { label: 'SOL', desc: 'Layer 1 Crypto' },
-  { label: 'BEST', desc: 'Crypto Token' },
-  { label: '0xba83b5ed3f12Bfa44f066f03eE0433419B74f469', desc: 'ETH Contract' },
+const EXAMPLE_TICKERS: Array<{ label: string; desc: string; mode: SearchMode }> = [
+  { label: 'NVDA', desc: 'AI Chip Stock', mode: 'stock' },
+  { label: 'F', desc: 'Ford Motor Co.', mode: 'stock' },
+  { label: 'SOL', desc: 'Layer 1 Crypto', mode: 'crypto' },
+  { label: 'BEST', desc: 'Crypto Token', mode: 'crypto' },
 ];
 
 const OPENAI_KEY_STORAGE = 'stocklens.openaiApiKey';
 
 export default function Home() {
   const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<SearchMode>('stock');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ResearchResult | null>(null);
+  const [candidates, setCandidates] = useState<SearchCandidate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openaiKey, setOpenaiKey] = useState('');
   const [showKeyInput, setShowKeyInput] = useState(false);
@@ -57,15 +65,14 @@ export default function Home() {
     }
   };
 
-  const handleSearch = async (q: string) => {
-    if (!q.trim()) return;
+  const fetchCandidate = async (candidate: SearchCandidate) => {
     setLoading(true);
     setError(null);
     setResult(null);
-
     try {
-      const data = await researchAsset(q.trim(), { openaiApiKey: openaiKey });
+      const data = await researchByCandidate(candidate, { openaiApiKey: openaiKey });
       setResult(data);
+      setCandidates(null);
       setTimeout(() => {
         resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
@@ -76,14 +83,44 @@ export default function Home() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    handleSearch(query);
+  const handleSearch = async (q: string, searchMode: SearchMode) => {
+    if (!q.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setCandidates(null);
+
+    try {
+      const matches = await searchAssetCandidates(q.trim(), searchMode);
+      if (matches.length === 0) {
+        throw new Error(
+          searchMode === 'stock'
+            ? `No stocks found for: ${q.trim()}`
+            : `No crypto found for: ${q.trim()}`,
+        );
+      }
+      if (matches.length === 1) {
+        await fetchCandidate(matches[0]);
+        return;
+      }
+      // Multiple matches — let the user disambiguate.
+      setCandidates(matches);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleExampleClick = (ticker: string) => {
-    setQuery(ticker);
-    handleSearch(ticker);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSearch(query, mode);
+  };
+
+  const handleExampleClick = (ex: { label: string; mode: SearchMode }) => {
+    setQuery(ex.label);
+    setMode(ex.mode);
+    handleSearch(ex.label, ex.mode);
   };
 
   const handlePrint = () => {
@@ -112,9 +149,49 @@ export default function Home() {
             Emerging-Tech Investment Two-Pager Generator
           </h1>
           <p className="text-slate-400 text-base max-w-lg mx-auto">
-            Enter any stock ticker, crypto symbol, or Ethereum contract address to generate
-            an investor-grade infographic in seconds.
+            Pick a market, then enter a ticker, company name, or Ethereum
+            contract address to generate an investor-grade infographic in
+            seconds.
           </p>
+        </div>
+
+        {/* Mode Toggle */}
+        <div className="flex justify-center mb-3">
+          <div
+            className="inline-flex rounded-xl p-1"
+            style={{ background: '#0D1422', border: '1px solid #1E2D47' }}
+            role="tablist"
+            aria-label="Search market"
+          >
+            {(['stock', 'crypto'] as const).map((m) => {
+              const active = mode === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    setMode(m);
+                    setCandidates(null);
+                    setError(null);
+                  }}
+                  disabled={loading}
+                  className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-50"
+                  style={
+                    active
+                      ? {
+                          background: 'linear-gradient(135deg, #1d4ed8, #7c3aed)',
+                          color: 'white',
+                        }
+                      : { color: '#94a3b8' }
+                  }
+                >
+                  {m === 'stock' ? '📈 Stock Market' : '🪙 Crypto'}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Search Form */}
@@ -124,7 +201,11 @@ export default function Home() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="NVDA, SOL, BEST, 0xba83b5..."
+              placeholder={
+                mode === 'stock'
+                  ? 'AAPL, Ford, BABA, RIVN, recent IPOs...'
+                  : 'BTC, SOL, BEST, 0xba83b5...'
+              }
               className="flex-1 px-4 py-3 rounded-xl text-slate-100 text-base outline-none focus:ring-2 focus:ring-blue-500"
               style={{
                 background: '#0D1422',
@@ -146,10 +227,10 @@ export default function Home() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  Fetching...
+                  Searching...
                 </span>
               ) : (
-                'Analyze →'
+                'Search →'
               )}
             </button>
           </div>
@@ -160,14 +241,19 @@ export default function Home() {
           <span className="text-[11px] text-slate-500 uppercase tracking-widest">Try:</span>
           {EXAMPLE_TICKERS.map((ex) => (
             <button
-              key={ex.label}
-              onClick={() => handleExampleClick(ex.label)}
+              key={`${ex.mode}:${ex.label}`}
+              onClick={() => handleExampleClick(ex)}
               disabled={loading}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:border-blue-500 disabled:opacity-50"
               style={{ background: '#0D1422', border: '1px solid #1E2D47', color: '#94a3b8' }}
             >
-              <span className="text-blue-400 font-bold">{ex.label.length > 12 ? ex.label.slice(0, 8) + '...' : ex.label}</span>
+              <span className="text-blue-400 font-bold">
+                {ex.label.length > 12 ? ex.label.slice(0, 8) + '...' : ex.label}
+              </span>
               <span className="text-slate-600">{ex.desc}</span>
+              <span className="text-[10px] text-slate-700 uppercase">
+                {ex.mode === 'stock' ? '· Stock' : '· Crypto'}
+              </span>
             </button>
           ))}
         </div>
@@ -225,6 +311,56 @@ export default function Home() {
           </div>
         )}
 
+        {/* Candidate Picker */}
+        {candidates && candidates.length > 0 && !loading && (
+          <div
+            className="max-w-xl mx-auto mt-6 rounded-xl p-4"
+            style={{ background: '#0D1422', border: '1px solid #1E2D47' }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-slate-300">
+                Found <strong className="text-blue-400">{candidates.length}</strong> matches
+                for &ldquo;{query}&rdquo;. Select one to continue:
+              </p>
+              <button
+                type="button"
+                onClick={() => setCandidates(null)}
+                className="text-[11px] text-slate-500 hover:text-slate-300 uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+            </div>
+            <ul className="flex flex-col gap-2">
+              {candidates.map((c) => {
+                const key = c.type === 'stock' ? `stock:${c.symbol}` : `crypto:${c.id}`;
+                const sub = c.type === 'stock' ? c.quoteType : 'Cryptocurrency';
+                return (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      onClick={() => fetchCandidate(c)}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left transition-all hover:border-blue-500"
+                      style={{ background: '#080C14', border: '1px solid #1E2D47' }}
+                    >
+                      <span className="flex flex-col min-w-0">
+                        <span className="text-sm font-bold text-slate-100 truncate">
+                          {c.name}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {c.market} · {sub}
+                        </span>
+                      </span>
+                      <span className="text-xs font-mono font-bold text-blue-400 shrink-0">
+                        {c.symbol}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         {/* Loading State */}
         {loading && (
           <div className="max-w-xl mx-auto mt-8 text-center">
@@ -233,7 +369,11 @@ export default function Home() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              <p className="text-slate-400 text-sm">Fetching market data and generating your two-pager...</p>
+              <p className="text-slate-400 text-sm">
+                {candidates
+                  ? 'Fetching market data and generating your two-pager...'
+                  : `Searching ${mode === 'stock' ? 'stock markets' : 'crypto'}...`}
+              </p>
               <p className="text-slate-600 text-xs">This may take a few seconds</p>
             </div>
           </div>
