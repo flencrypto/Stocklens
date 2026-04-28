@@ -26,8 +26,9 @@ export default function Home() {
   const resultsRef = useRef<HTMLDivElement>(null);
 
   // Load any previously saved key on mount. Falls back to a build-time env
-  // var (NEXT_PUBLIC_OPENAI_API_KEY) so the app can be configured at deploy
-  // time too.
+  // var so the app can be configured at deploy time too. We prefer
+  // `OPENAI_KEY` (the variable name used in the Vercel deployment settings)
+  // and fall back to `NEXT_PUBLIC_OPENAI_API_KEY` for backward compatibility.
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(OPENAI_KEY_STORAGE);
@@ -38,7 +39,8 @@ export default function Home() {
     } catch {
       // ignore localStorage errors (e.g. private mode)
     }
-    const envKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+    const envKey =
+      process.env.OPENAI_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY;
     if (envKey) setOpenaiKey(envKey);
   }, []);
 
