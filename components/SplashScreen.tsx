@@ -28,27 +28,44 @@ export default function SplashScreen() {
       return;
     }
 
-    // Allow user to dismiss early with click / key press / scroll.
-    const beginLeave = () => setLeaving(true);
-
-    const startTimer = window.setTimeout(beginLeave, 2400);
-    const endTimer = window.setTimeout(() => {
+    // Allow user to dismiss early with click / Escape / Enter / Space.
+    let endTimer = 0;
+    const finish = () => {
       setMounted(false);
       try {
         window.sessionStorage.setItem('stocklens.splashShown', '1');
       } catch {
         // ignore
       }
-    }, 3200);
+    };
+    const beginLeave = () => {
+      setLeaving((wasLeaving) => {
+        if (!wasLeaving) {
+          // Reset the unmount timer so it fires after the fade-out
+          // animation (~0.8s) regardless of when dismissal started.
+          window.clearTimeout(endTimer);
+          endTimer = window.setTimeout(finish, 850);
+        }
+        return true;
+      });
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
+        beginLeave();
+      }
+    };
+
+    const startTimer = window.setTimeout(beginLeave, 2400);
+    endTimer = window.setTimeout(finish, 3200);
 
     window.addEventListener('click', beginLeave);
-    window.addEventListener('keydown', beginLeave);
+    window.addEventListener('keydown', onKeyDown);
 
     return () => {
       window.clearTimeout(startTimer);
       window.clearTimeout(endTimer);
       window.removeEventListener('click', beginLeave);
-      window.removeEventListener('keydown', beginLeave);
+      window.removeEventListener('keydown', onKeyDown);
     };
   }, []);
 
