@@ -12,6 +12,11 @@
   --accent-green: #4ade80;
   --accent-red: #f87171;
   --accent-yellow: #facc15;
+  /* Mr.FLENS neon palette (matches the Stock-Lens cover artwork). */
+  --neon-cyan: #22d3ee;
+  --neon-cyan-soft: #67e8f9;
+  --neon-blue: #38bdf8;
+  --neon-deep: #0ea5e9;
 }
 
 * {
@@ -30,10 +35,34 @@ body {
     text-wrap: balance;
   }
   .gradient-text {
-    background: linear-gradient(135deg, #60a5fa, #a855f7);
+    background: linear-gradient(135deg, #67e8f9, #38bdf8 55%, #0ea5e9);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+  }
+  /* Mr.FLENS neon utilities. */
+  .neon-gradient {
+    background: linear-gradient(135deg, #22d3ee 0%, #38bdf8 50%, #0ea5e9 100%);
+  }
+  .neon-text {
+    background: linear-gradient(135deg, #a5f3fc 0%, #22d3ee 45%, #0ea5e9 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    /* drop-shadow works on gradient-clipped text where text-shadow does not. */
+    filter: drop-shadow(0 0 12px rgba(34, 211, 238, 0.45));
+  }
+  .neon-glow {
+    box-shadow:
+      0 0 0 1px rgba(34, 211, 238, 0.55),
+      0 0 18px rgba(34, 211, 238, 0.45),
+      0 0 42px rgba(14, 165, 233, 0.25);
+  }
+  .neon-ring {
+    box-shadow:
+      0 0 0 2px rgba(34, 211, 238, 0.7),
+      0 0 22px rgba(34, 211, 238, 0.55),
+      inset 0 0 22px rgba(34, 211, 238, 0.35);
   }
   .card-glass {
     background: rgba(13, 20, 34, 0.8);
@@ -68,6 +97,44 @@ body {
   .infographic-card {
     @apply bg-[#0D1422] border border-[#1E2D47] rounded-lg p-3;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Mr.FLENS hero backdrop — faint trading-grid + ticker tape glow.    */
+/* Purely decorative: sits behind hero content with pointer-events    */
+/* disabled so it never affects layout or interactions.               */
+/* ------------------------------------------------------------------ */
+.hero-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+  opacity: 0.55;
+}
+.hero-backdrop::before,
+.hero-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.hero-backdrop::before {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.08) 1px, transparent 1px);
+  background-size: 56px 56px, 56px 56px;
+  mask-image: radial-gradient(ellipse at center, #000 0%, #000 45%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, #000 45%, transparent 75%);
+}
+.hero-backdrop::after {
+  background:
+    radial-gradient(ellipse at 18% 30%, rgba(34, 211, 238, 0.22), transparent 55%),
+    radial-gradient(ellipse at 82% 70%, rgba(56, 189, 248, 0.18), transparent 60%);
+  filter: blur(10px);
+}
+.hero-content {
+  position: relative;
+  z-index: 1;
 }
 
 @media print {
