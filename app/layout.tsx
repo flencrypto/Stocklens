@@ -15,7 +15,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Stocklens — Investment Two-Pager Generator",
+  title: "Mr.FLENS Stock-Lens — Investment Two-Pager Generator",
   description: "Generate investor-grade 2-page infographics for any stock, crypto token, or Ethereum contract address using live market data.",
 };
 

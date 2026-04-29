@@ -133,17 +133,34 @@ export default function Home() {
       style={{ background: 'linear-gradient(180deg, #050810 0%, #080C14 100%)' }}
     >
       {/* Hero / Search Section */}
-      <div className="max-w-4xl mx-auto px-4 pt-16 pb-10">
+      <div className="relative max-w-4xl mx-auto px-4 pt-16 pb-10">
+        {/* Decorative trading-grid + ticker glow backdrop (no-op for layout) */}
+        <div className="hero-backdrop no-print" aria-hidden="true" />
+
+        <div className="hero-content">
         {/* Brand */}
         <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 mb-3">
+          <div className="inline-flex flex-col items-center gap-3 mb-4">
+            {/* Mr.FLENS lens avatar — neon cyan ring around the cover artwork. */}
             <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-black text-sm"
-              style={{ background: 'linear-gradient(135deg, #1d4ed8, #7c3aed)' }}
+              className="relative w-20 h-20 rounded-full overflow-hidden neon-ring"
+              style={{ background: '#04070f' }}
             >
-              SL
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/splash.jpg"
+                alt="Mr.FLENS Stock-Lens"
+                className="w-full h-full object-cover"
+              />
             </div>
-            <span className="text-2xl font-black gradient-text tracking-tight">Stocklens</span>
+            <div className="flex flex-col items-center leading-none">
+              <span className="text-[10px] font-bold uppercase tracking-[0.4em] text-cyan-300/80">
+                Mr.FLENS
+              </span>
+              <span className="text-3xl sm:text-4xl font-black neon-text tracking-tight mt-1">
+                STOCK&nbsp;·&nbsp;LENS
+              </span>
+            </div>
           </div>
           <h1 className="text-3xl font-black text-slate-100 mb-2 leading-tight">
             Emerging-Tech Investment Two-Pager Generator
@@ -181,8 +198,11 @@ export default function Home() {
                   style={
                     active
                       ? {
-                          background: 'linear-gradient(135deg, #1d4ed8, #7c3aed)',
-                          color: 'white',
+                          background:
+                            'linear-gradient(135deg, #22d3ee 0%, #38bdf8 50%, #0ea5e9 100%)',
+                          color: '#04070f',
+                          boxShadow:
+                            '0 0 0 1px rgba(34,211,238,0.55), 0 0 18px rgba(34,211,238,0.45)',
                         }
                       : { color: '#94a3b8' }
                   }
@@ -206,7 +226,7 @@ export default function Home() {
                   ? 'AAPL, Ford, BABA, RIVN, recent IPOs...'
                   : 'BTC, SOL, BEST, 0xba83b5...'
               }
-              className="flex-1 px-4 py-3 rounded-xl text-slate-100 text-base outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-4 py-3 rounded-xl text-slate-100 text-base outline-none focus:ring-2 focus:ring-cyan-400"
               style={{
                 background: '#0D1422',
                 border: '1px solid #1E2D47',
@@ -216,9 +236,13 @@ export default function Home() {
             <button
               type="submit"
               disabled={loading || !query.trim()}
-              className="px-6 py-3 rounded-xl font-bold text-white text-base transition-all disabled:opacity-50"
+              className="px-6 py-3 rounded-xl font-bold text-base transition-all disabled:opacity-50"
               style={{
-                background: 'linear-gradient(135deg, #1d4ed8, #7c3aed)',
+                background:
+                  'linear-gradient(135deg, #22d3ee 0%, #38bdf8 50%, #0ea5e9 100%)',
+                color: '#04070f',
+                boxShadow:
+                  '0 0 0 1px rgba(34,211,238,0.55), 0 0 18px rgba(34,211,238,0.45), 0 0 42px rgba(14,165,233,0.25)',
               }}
             >
               {loading ? (
@@ -244,10 +268,10 @@ export default function Home() {
               key={`${ex.mode}:${ex.label}`}
               onClick={() => handleExampleClick(ex)}
               disabled={loading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:border-blue-500 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:border-cyan-400 disabled:opacity-50"
               style={{ background: '#0D1422', border: '1px solid #1E2D47', color: '#94a3b8' }}
             >
-              <span className="text-blue-400 font-bold">
+              <span className="text-cyan-300 font-bold">
                 {ex.label.length > 12 ? ex.label.slice(0, 8) + '...' : ex.label}
               </span>
               <span className="text-slate-600">{ex.desc}</span>
@@ -365,7 +389,7 @@ export default function Home() {
         {loading && (
           <div className="max-w-xl mx-auto mt-8 text-center">
             <div className="flex flex-col items-center gap-3">
-              <svg className="animate-spin w-10 h-10 text-blue-500" viewBox="0 0 24 24" fill="none">
+              <svg className="animate-spin w-10 h-10 text-cyan-400" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
@@ -378,6 +402,7 @@ export default function Home() {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Results Section */}
@@ -390,7 +415,7 @@ export default function Home() {
                 {result.type === 'stock'
                   ? (result.data as StockData).name
                   : (result.data as CryptoData).name}{' '}
-                <span className="text-blue-400">— Two-Pager</span>
+                <span className="neon-text">— Two-Pager</span>
               </h2>
               <p className="text-xs text-slate-500">
                 Generated from live {result.type === 'stock' ? 'Yahoo Finance' : 'CoinGecko'} data ·{' '}
@@ -441,7 +466,7 @@ export default function Home() {
 
       {/* Footer */}
       <div className="text-center py-8 text-[11px] text-slate-700 no-print">
-        Stocklens — For educational purposes only. Not financial advice.
+        Mr.FLENS Stock-Lens — For educational purposes only. Not financial advice.
       </div>
     </main>
   );
