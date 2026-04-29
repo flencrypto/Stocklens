@@ -48,26 +48,72 @@ export interface StockData {
 
 const YF_BASE = 'https://query1.finance.yahoo.com';
 
-// Yahoo Finance APIs do not send CORS headers, so browser-originated
-// fetches are blocked. All requests are routed through the app's own
-// server-side proxy at /api/yf-proxy, which forwards the request from
-// the Next.js server (no CORS restriction) and returns the JSON to
-// the client.
-async function fetchYahooJson(yahooUrl: string): Promise<unknown> {
-  // Extract only the path+query portion from the full Yahoo Finance URL.
-  // The proxy hardcodes the base domain server-side to prevent SSRF.
-  const parsed = new URL(yahooUrl);
-  const path = parsed.pathname + parsed.search;
-  const proxyUrl = `/api/yf-proxy?path=${encodeURIComponent(path)}`;
-  const res = await fetch(proxyUrl, { headers: { Accept: 'application/json' } });
+// Yahoo Finance APIs do not send CORS headers, and the v10 `quoteSummary`
+// endpoint additionally requires a "crumb" cookie/auth token that cannot
+// be obtained from the browser. Because Stocklens is deployed as a static
+// site (GitHub Pages, `next build` -> `./out`), we have no backend of our
+// own to proxy through, so we route Yahoo Finance requests through a
+// public CORS-enabled relay.
+//
+// Public CORS proxies are unreliable individually (any one of them can be
+// down, rate-limited, or temporarily 5xx-ing on a given day), so we keep
+// a small ordered list of proxies and fall through to the next on failure.
+// Once we find one that works in the current session we remember its index
+// so subsequent calls go to the known-good proxy first.
+type ProxyBuilder = (yahooUrl: string) => string;
+const CORS_PROXIES: ProxyBuilder[] = [
+  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`,
+  (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}`,
+  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+];
 
-  if (!res.ok) {
-    const err = new Error(`HTTP ${res.status}`) as Error & { status: number };
-    err.status = res.status;
-    throw err;
+let preferredProxyIndex = 0;
+
+async function fetchYahooJson(yahooUrl: string): Promise<unknown> {
+  const order: number[] = [];
+  for (let i = 0; i < CORS_PROXIES.length; i++) {
+    order.push((preferredProxyIndex + i) % CORS_PROXIES.length);
   }
 
-  return res.json();
+  let lastStatus: number | undefined;
+  let lastError: unknown;
+  for (const idx of order) {
+    const proxiedUrl = CORS_PROXIES[idx](yahooUrl);
+    try {
+      const res = await fetch(proxiedUrl, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        lastStatus = res.status;
+        // 404 from the upstream is a real "not found" signal we want to
+        // surface immediately rather than retrying through other proxies,
+        // because every proxy will return the same 404.
+        if (res.status === 404) {
+          const err = new Error(`HTTP 404`) as Error & { status: number };
+          err.status = 404;
+          throw err;
+        }
+        continue;
+      }
+      const data = await res.json();
+      preferredProxyIndex = idx;
+      return data;
+    } catch (err) {
+      // If we already classified this as an upstream 404, propagate it.
+      if ((err as { status?: number } | null)?.status === 404) throw err;
+      lastError = err;
+    }
+  }
+
+  const err = new Error(
+    lastStatus ? `HTTP ${lastStatus}` : 'All CORS proxies failed',
+  ) as Error & { status?: number };
+  if (lastStatus) err.status = lastStatus;
+  if (lastError && !lastStatus) {
+    (err as Error & { cause?: unknown }).cause = lastError;
+  }
+  throw err;
 }
 
 export interface StockSearchResult {

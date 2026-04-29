@@ -12,7 +12,7 @@ import {
   CryptoData,
   CryptoSearchResult,
 } from '@/lib/cryptoData';
-import { generateInsights, generateInsightsViaServer, NoServerKeyError, AssetInsights } from '@/lib/insights';
+import { generateInsights, AssetInsights } from '@/lib/insights';
 
 export type SearchMode = 'stock' | 'crypto';
 
@@ -197,24 +197,10 @@ async function enrichWithInsights(
 ): Promise<ResearchResult> {
   const apiKey = options.openaiApiKey?.trim();
   if (apiKey) {
-    // User-provided key: call OpenAI directly from the browser so the key
-    // is never transmitted to the app server.
     try {
       result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
     } catch (err) {
       result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
-    }
-  } else {
-    // No user key: try the server-side insights endpoint which reads
-    // OPENAI_KEY from the runtime environment. Silently skip when the
-    // server has no key configured.
-    try {
-      result.insights = await generateInsightsViaServer(result.type, result.data, result.assetClass);
-    } catch (err) {
-      // NoServerKeyError means the server simply has no key — not worth surfacing to the user.
-      if (!(err instanceof NoServerKeyError)) {
-        result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
-      }
     }
   }
   return result;
