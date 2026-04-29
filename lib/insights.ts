@@ -147,3 +147,61 @@ export async function generateInsights(
 
   return { thesis, bullCase, bearCase, catalysts };
 }
+
+/**
+ * Error thrown by `generateInsightsViaServer` when the server has no
+ * OpenAI API key configured. Callers can check `instanceof NoServerKeyError`
+ * to distinguish this from other failures.
+ */
+export class NoServerKeyError extends Error {
+  constructor() {
+    super('No OpenAI API key configured on server');
+    this.name = 'NoServerKeyError';
+  }
+}
+
+/**
+ * Generates insights by calling the app's own server-side `/api/insights`
+ * endpoint, which reads the OpenAI API key from the server's runtime
+ * environment. Use this when no user-provided API key is available.
+ *
+ * Throws `NoServerKeyError` when the server has no key configured (503).
+ * Throws a generic Error for other failures.
+ */
+export async function generateInsightsViaServer(
+  type: 'stock' | 'crypto',
+  data: StockData | CryptoData,
+  assetClass: string,
+): Promise<AssetInsights> {
+  const res = await fetch('/api/insights', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, data, assetClass }),
+  });
+
+  const json = (await res.json()) as Partial<AssetInsights> & { error?: string };
+
+  if (!res.ok) {
+    if (res.status === 503) throw new NoServerKeyError();
+    throw new Error(json?.error || `Server insights failed (HTTP ${res.status})`);
+  }
+
+  const toStringArray = (v: unknown, max = 5): string[] => {
+    if (!Array.isArray(v)) return [];
+    return (v as unknown[])
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter((s) => s.length > 0)
+      .slice(0, max);
+  };
+
+  const thesis = typeof json.thesis === 'string' ? json.thesis.trim() : '';
+  const bullCase = toStringArray(json.bullCase);
+  const bearCase = toStringArray(json.bearCase);
+  const catalysts = toStringArray(json.catalysts);
+
+  if (!thesis || bullCase.length === 0 || bearCase.length === 0 || catalysts.length === 0) {
+    throw new Error('Server insights response was missing required fields');
+  }
+
+  return { thesis, bullCase, bearCase, catalysts };
+}
