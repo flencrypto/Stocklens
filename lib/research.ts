@@ -196,12 +196,15 @@ async function enrichWithInsights(
   options: ResearchOptions,
 ): Promise<ResearchResult> {
   const apiKey = options.openaiApiKey?.trim();
-  if (apiKey) {
-    try {
-      result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
-    } catch (err) {
-      result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
-    }
+  if (!apiKey) {
+    result.insightsError =
+      'No OpenAI API key configured. Provide an API key to enable AI insights.';
+    return result;
+  }
+  try {
+    result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
+  } catch (err) {
+    result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
   }
   return result;
 }

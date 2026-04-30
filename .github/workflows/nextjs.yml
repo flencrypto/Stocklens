@@ -31,6 +31,8 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
 
   deploy:
     name: Deploy to GitHub Pages
@@ -55,6 +57,8 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
 
       - name: GitHub Pages action
         uses: peaceiris/actions-gh-pages@v4.0.0
