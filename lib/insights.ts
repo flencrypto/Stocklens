@@ -11,6 +11,27 @@ export interface AssetInsights {
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 
+function normalizeInsights(parsed: Partial<AssetInsights>): AssetInsights {
+  const toStringArray = (v: unknown, max = 5): string[] => {
+    if (!Array.isArray(v)) return [];
+    return v
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter((s) => s.length > 0)
+      .slice(0, max);
+  };
+
+  const thesis = typeof parsed.thesis === 'string' ? parsed.thesis.trim() : '';
+  const bullCase = toStringArray(parsed.bullCase);
+  const bearCase = toStringArray(parsed.bearCase);
+  const catalysts = toStringArray(parsed.catalysts);
+
+  if (!thesis || bullCase.length === 0 || bearCase.length === 0 || catalysts.length === 0) {
+    throw new Error('OpenAI response was missing required insight fields');
+  }
+
+  return { thesis, bullCase, bearCase, catalysts };
+}
+
 /**
  * Builds a compact, structured snapshot of the asset for the LLM prompt.
  * Only includes non-null fields so the prompt stays focused on real data.
@@ -46,23 +67,16 @@ interface OpenAIResponse {
 }
 
 /**
- * Generates investment insights (thesis, bull case, bear case, catalysts)
- * for a given asset by calling the OpenAI Chat Completions API.
- *
- * Throws an Error if the API key is missing/invalid or the response cannot
- * be parsed. Callers are responsible for falling back to heuristic insights
- * on failure.
+ * Server-side OpenAI call used by the API route handler.
  */
-export async function generateInsights(
+export async function generateInsightsServer(
   apiKey: string,
   type: 'stock' | 'crypto',
   data: StockData | CryptoData,
   assetClass: string,
   options?: { model?: string; signal?: AbortSignal },
 ): Promise<AssetInsights> {
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error('OpenAI API key is required');
-  }
+  if (!apiKey || !apiKey.trim()) throw new Error('OpenAI API key is required');
 
   const snapshot = buildAssetSnapshot(type, data, assetClass);
   const model = options?.model || DEFAULT_MODEL;
@@ -128,22 +142,75 @@ export async function generateInsights(
     throw new Error('Failed to parse OpenAI response as JSON');
   }
 
-  const toStringArray = (v: unknown, max = 5): string[] => {
-    if (!Array.isArray(v)) return [];
-    return v
-      .map((item) => (typeof item === 'string' ? item.trim() : ''))
-      .filter((s) => s.length > 0)
-      .slice(0, max);
-  };
+  return normalizeInsights(parsed);
+}
 
-  const thesis = typeof parsed.thesis === 'string' ? parsed.thesis.trim() : '';
-  const bullCase = toStringArray(parsed.bullCase);
-  const bearCase = toStringArray(parsed.bearCase);
-  const catalysts = toStringArray(parsed.catalysts);
+async function generateInsightsViaApiRoute(
+  apiKey: string | undefined,
+  type: 'stock' | 'crypto',
+  data: StockData | CryptoData,
+  assetClass: string,
+  options?: { model?: string; signal?: AbortSignal },
+): Promise<AssetInsights> {
+  const res = await fetch('/api/insights', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      apiKey: apiKey?.trim() || '',
+      model: options?.model,
+      type,
+      data,
+      assetClass,
+    }),
+    signal: options?.signal,
+  });
 
-  if (!thesis || bullCase.length === 0 || bearCase.length === 0 || catalysts.length === 0) {
-    throw new Error('OpenAI response was missing required insight fields');
+  let payload: unknown = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // ignore
   }
 
-  return { thesis, bullCase, bearCase, catalysts };
+  if (!res.ok) {
+    const msg = (() => {
+      if (payload && typeof payload === 'object') {
+        const error = (payload as Record<string, unknown>).error;
+        if (typeof error === 'string' && error.trim()) return error;
+      }
+      return `Insight request failed (HTTP ${res.status})`;
+    })();
+    throw new Error(msg);
+  }
+
+  return normalizeInsights(payload as Partial<AssetInsights>);
+}
+
+/**
+ * Generates investment insights (thesis, bull case, bear case, catalysts)
+ * for a given asset.
+ *
+ * In the browser, this calls the app's `/api/insights` endpoint (to avoid
+ * CORS-blocked direct calls to `api.openai.com`). On the server, it calls
+ * OpenAI directly.
+ */
+export async function generateInsights(
+  apiKey: string | undefined,
+  type: 'stock' | 'crypto',
+  data: StockData | CryptoData,
+  assetClass: string,
+  options?: { model?: string; signal?: AbortSignal },
+): Promise<AssetInsights> {
+  if (typeof window !== 'undefined') {
+    return generateInsightsViaApiRoute(apiKey, type, data, assetClass, options);
+  }
+
+  const resolvedKey =
+    apiKey?.trim() ||
+    process.env.OPENAI_KEY ||
+    process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+  if (!resolvedKey) {
+    throw new Error('No OpenAI API key configured. Provide a key to enable AI insights.');
+  }
+  return generateInsightsServer(resolvedKey, type, data, assetClass, options);
 }
