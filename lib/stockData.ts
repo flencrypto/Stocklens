@@ -70,7 +70,14 @@ const CORS_PROXIES: ProxyBuilder[] = [
 
 let preferredProxyIndex = 0;
 
-async function fetchYahooJson(yahooUrl: string): Promise<unknown> {
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchYahooJson(
+  yahooUrl: string,
+  maxRetries = 2,
+): Promise<unknown> {
   const order: number[] = [];
   for (let i = 0; i < CORS_PROXIES.length; i++) {
     order.push((preferredProxyIndex + i) % CORS_PROXIES.length);
@@ -78,36 +85,71 @@ async function fetchYahooJson(yahooUrl: string): Promise<unknown> {
 
   let lastStatus: number | undefined;
   let lastError: unknown;
+  const errors: string[] = [];
+
   for (const idx of order) {
     const proxiedUrl = CORS_PROXIES[idx](yahooUrl);
-    try {
-      const res = await fetch(proxiedUrl, {
-        headers: { Accept: 'application/json' },
-      });
-      if (!res.ok) {
-        lastStatus = res.status;
-        // 404 from the upstream is a real "not found" signal we want to
-        // surface immediately rather than retrying through other proxies,
-        // because every proxy will return the same 404.
-        if (res.status === 404) {
-          const err = new Error(`HTTP 404`) as Error & { status: number };
-          err.status = 404;
-          throw err;
+
+    // Retry each proxy up to maxRetries times for transient failures
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch(proxiedUrl, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(10000), // 10 second timeout
+        });
+        if (!res.ok) {
+          lastStatus = res.status;
+          const errorMsg = `HTTP ${res.status}`;
+          if (attempt === 0) {
+            errors.push(`Proxy ${idx}: ${errorMsg}`);
+          }
+          // 404 from the upstream is a real "not found" signal we want to
+          // surface immediately rather than retrying through other proxies,
+          // because every proxy will return the same 404.
+          if (res.status === 404) {
+            const err = new Error(`HTTP 404`) as Error & { status: number };
+            err.status = 404;
+            throw err;
+          }
+          // For 5xx errors or 429 (rate limit), retry with backoff
+          if (
+            res.status >= 500 ||
+            res.status === 429 ||
+            res.status === 522 ||
+            res.status === 524
+          ) {
+            if (attempt < maxRetries) {
+              await sleep(Math.min(1000 * Math.pow(2, attempt), 3000));
+              continue;
+            }
+          }
+          break; // Non-retryable error, try next proxy
         }
-        continue;
+        const data = await res.json();
+        preferredProxyIndex = idx;
+        return data;
+      } catch (err) {
+        // If we already classified this as an upstream 404, propagate it.
+        if ((err as { status?: number } | null)?.status === 404) throw err;
+        lastError = err;
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        if (attempt === 0) {
+          errors.push(`Proxy ${idx}: ${errorMsg}`);
+        }
+        // Retry on network errors (timeouts, connection refused, etc.)
+        if (attempt < maxRetries && errorMsg.toLowerCase().includes('timeout')) {
+          await sleep(Math.min(1000 * Math.pow(2, attempt), 3000));
+          continue;
+        }
+        break; // Non-retryable error or max retries reached, try next proxy
       }
-      const data = await res.json();
-      preferredProxyIndex = idx;
-      return data;
-    } catch (err) {
-      // If we already classified this as an upstream 404, propagate it.
-      if ((err as { status?: number } | null)?.status === 404) throw err;
-      lastError = err;
     }
   }
 
   const err = new Error(
-    lastStatus ? `HTTP ${lastStatus}` : 'All CORS proxies failed',
+    lastStatus
+      ? `HTTP ${lastStatus} (tried ${CORS_PROXIES.length} proxies with retries)`
+      : `All CORS proxies failed: ${errors.join('; ')}`,
   ) as Error & { status?: number };
   if (lastStatus) err.status = lastStatus;
   if (lastError && !lastStatus) {
