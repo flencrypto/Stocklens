@@ -73,7 +73,7 @@ function isTickerNotFoundError(err: unknown): boolean {
     err && typeof err === 'object' && 'status' in err
       ? (err as { status?: unknown }).status
       : undefined;
-  if (status === 404) return true;
+  if (typeof status === 'number' && status === 404) return true;
   const msg = err instanceof Error ? err.message : String(err || '');
   const lower = msg.toLowerCase();
   return lower.includes('no results found') || lower.includes('invalid ticker');
@@ -231,7 +231,7 @@ export async function searchAssetCandidates(
         },
       ];
     } catch (err) {
-      // If exact-symbol lookup failed due proxy/rate-limit issues, still return
+      // If exact-symbol lookup failed due to proxy/rate-limit issues, still return
       // a direct candidate so the user can continue without Yahoo search.
       if (!isTickerNotFoundError(err)) {
         const symbol = trimmed.toUpperCase();
