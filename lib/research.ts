@@ -43,6 +43,42 @@ export type SearchCandidate =
   | (BaseCandidate & { type: 'stock'; quoteType: string })
   | (BaseCandidate & { type: 'crypto'; id: string; marketCapRank: number | null });
 
+const prefetchedStockData = new Map<string, StockData>();
+const MAX_PREFETCHED_STOCKS = 20;
+const STOCK_FALLBACK_MARKET = 'Stock Market';
+const STOCK_FALLBACK_QUOTE_TYPE = 'Equity';
+
+function cachePrefetchedStock(data: StockData): void {
+  const symbol = data.ticker.toUpperCase();
+  prefetchedStockData.set(symbol, data);
+  if (prefetchedStockData.size > MAX_PREFETCHED_STOCKS) {
+    const oldest = prefetchedStockData.keys().next().value;
+    if (oldest) {
+      prefetchedStockData.delete(oldest);
+    }
+  }
+}
+
+function quoteTypeLabel(quoteType: string | null | undefined): string {
+  const normalized = (quoteType || '').toUpperCase();
+  if (normalized === 'ETF') return 'ETF';
+  if (normalized === 'MUTUALFUND') return 'Mutual Fund';
+  if (normalized === 'INDEX') return 'Index';
+  if (normalized === 'EQUITY') return 'Equity';
+  return 'Equity';
+}
+
+function isTickerNotFoundError(err: unknown): boolean {
+  const status =
+    err && typeof err === 'object' && 'status' in err
+      ? (err as { status?: unknown }).status
+      : undefined;
+  if (typeof status === 'number' && status === 404) return true;
+  const msg = err instanceof Error ? err.message : String(err || '');
+  const lower = msg.toLowerCase();
+  return lower.includes('no results found') || lower.includes('invalid ticker');
+}
+
 function classifyStockAsset(data: StockData): string {
   const sector = (data.sector || '').toLowerCase();
   const industry = (data.industry || '').toLowerCase();
@@ -132,7 +168,8 @@ function classifyCryptoAsset(data: CryptoData): string {
 /**
  * Search the requested market for candidates matching the user's query.
  *
- * - In `stock` mode this hits Yahoo Finance's search API and returns
+ * - In `stock` mode this first attempts a direct ticker lookup for exact
+ *   symbols, then falls back to Yahoo Finance's search API and returns
  *   equities/ETFs/funds across all exchanges (including newly listed names).
  * - In `crypto` mode this hits CoinGecko's search API and only returns coins.
  *   A 0x-prefixed Ethereum contract address is treated as a single direct
@@ -178,6 +215,42 @@ export async function searchAssetCandidates(
   }
 
   // Stock mode
+  const looksLikeTicker =
+    !trimmed.includes(' ') && /^[0-9A-Za-z.^=:_-]{1,15}$/.test(trimmed);
+  if (looksLikeTicker) {
+    try {
+      const data = await fetchStockData(trimmed);
+      cachePrefetchedStock(data);
+      return [
+        {
+          type: 'stock',
+          symbol: data.ticker,
+          name: data.name,
+          market: data.exchange || STOCK_FALLBACK_MARKET,
+          quoteType: quoteTypeLabel(data.quoteType),
+        },
+      ];
+    } catch (err) {
+      // If exact-symbol lookup failed due to proxy/rate-limit issues, still return
+      // a direct candidate so the user can continue without Yahoo search.
+      if (!isTickerNotFoundError(err)) {
+        const symbol = trimmed.toUpperCase();
+        // Minimal placeholder metadata for transient lookup failures. The
+        // detailed profile/market labeling is fetched in `researchByCandidate`.
+        return [
+          {
+            type: 'stock',
+            symbol,
+            name: symbol,
+            market: STOCK_FALLBACK_MARKET,
+            quoteType: STOCK_FALLBACK_QUOTE_TYPE,
+          },
+        ];
+      }
+      // Fall back to Yahoo search when direct lookup returns "not found".
+    }
+  }
+
   const quotes = await searchStocks(trimmed);
   if (quotes.length === 0) {
     throw new Error(`No stocks found for: ${trimmed}`);
@@ -186,7 +259,7 @@ export async function searchAssetCandidates(
     type: 'stock' as const,
     symbol: q.symbol,
     name: q.name,
-    market: q.exchange || 'Stock Market',
+    market: q.exchange || STOCK_FALLBACK_MARKET,
     quoteType: q.type,
   }));
 }
@@ -218,7 +291,12 @@ export async function researchByCandidate(
   options: ResearchOptions = {},
 ): Promise<ResearchResult> {
   if (candidate.type === 'stock') {
-    const data = await fetchStockData(candidate.symbol);
+    const symbol = candidate.symbol.toUpperCase();
+    const cached = prefetchedStockData.get(symbol);
+    if (cached) {
+      prefetchedStockData.delete(symbol);
+    }
+    const data = cached ?? await fetchStockData(symbol);
     const result: ResearchResult = {
       type: 'stock',
       data,
