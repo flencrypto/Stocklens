@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { DEFAULT_INSIGHTS_MODEL, generateInsightsServer } from '@/lib/insights';
+import {
+  DEFAULT_INSIGHTS_MODEL,
+  MAX_INSIGHTS_ARRAY_ITEMS,
+  MAX_INSIGHTS_ARRAY_ITEM_LENGTH,
+  generateInsightsServer,
+} from '@/lib/insights';
 import type { StockData } from '@/lib/stockData';
 import type { CryptoData } from '@/lib/cryptoData';
 
@@ -14,6 +19,9 @@ type InsightsRequestBody = {
 
 const STOCK_REQUIRED_KEYS = ['ticker', 'name', 'description'] as const;
 const CRYPTO_REQUIRED_KEYS = ['id', 'name', 'symbol'] as const;
+const MAX_PAYLOAD_ENTRIES = 64;
+const MAX_STRING_LENGTH = 1200;
+const MAX_ASSET_CLASS_LENGTH = 120;
 
 const STOCK_ALLOWED_KEYS = new Set<string>([
   'ticker',
@@ -112,13 +120,13 @@ function validatePayload(
   if (!isPlainObject(data)) return false;
 
   const entries = Object.entries(data);
-  if (entries.length === 0 || entries.length > 64) return false;
+  if (entries.length === 0 || entries.length > MAX_PAYLOAD_ENTRIES) return false;
 
   const allowedKeys = type === 'stock' ? STOCK_ALLOWED_KEYS : CRYPTO_ALLOWED_KEYS;
   const requiredKeys = type === 'stock' ? STOCK_REQUIRED_KEYS : CRYPTO_REQUIRED_KEYS;
 
   for (const key of requiredKeys) {
-    if (!isShortString(data[key], 1200)) return false;
+    if (!isShortString(data[key], MAX_STRING_LENGTH)) return false;
   }
 
   for (const [key, value] of entries) {
@@ -129,13 +137,18 @@ function validatePayload(
       continue;
     }
     if (typeof value === 'string') {
-      if (value.length > 1200) return false;
+      if (value.length > MAX_STRING_LENGTH) return false;
       continue;
     }
     if (key === 'categories' && Array.isArray(value)) {
       if (
-        value.length > 12 ||
-        value.some((item) => typeof item !== 'string' || item.trim().length === 0 || item.length > 80)
+        value.length > MAX_INSIGHTS_ARRAY_ITEMS ||
+        value.some(
+          (item) =>
+            typeof item !== 'string' ||
+            item.trim().length === 0 ||
+            item.length > MAX_INSIGHTS_ARRAY_ITEM_LENGTH,
+        )
       ) {
         return false;
       }
@@ -166,7 +179,7 @@ export async function POST(req: Request) {
   if (!validatePayload(type, data)) {
     return NextResponse.json({ error: 'Invalid or missing asset data' }, { status: 400 });
   }
-  if (!assetClass || assetClass.length > 120) {
+  if (!assetClass || assetClass.length > MAX_ASSET_CLASS_LENGTH) {
     return NextResponse.json({ error: 'Invalid or missing asset class' }, { status: 400 });
   }
   if (!apiKey) {

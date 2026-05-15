@@ -10,6 +10,8 @@ export interface AssetInsights {
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 export const DEFAULT_INSIGHTS_MODEL = 'gpt-4o-mini';
+export const MAX_INSIGHTS_ARRAY_ITEMS = 12;
+export const MAX_INSIGHTS_ARRAY_ITEM_LENGTH = 80;
 
 function normalizeInsights(parsed: Partial<AssetInsights>): AssetInsights {
   const toStringArray = (v: unknown, max = 5): string[] => {
@@ -52,9 +54,11 @@ function buildAssetSnapshot(
       snapshot[key] = value.slice(0, 600) + '…';
     } else if (Array.isArray(value)) {
       snapshot[key] = value
-        .slice(0, 12)
+        .slice(0, MAX_INSIGHTS_ARRAY_ITEMS)
         .map((item) =>
-          typeof item === 'string' ? item.trim().slice(0, 80) : String(item).slice(0, 80),
+          typeof item === 'string'
+            ? item.trim().slice(0, MAX_INSIGHTS_ARRAY_ITEM_LENGTH)
+            : String(item).slice(0, MAX_INSIGHTS_ARRAY_ITEM_LENGTH),
         )
         .filter((item) => item.length > 0);
     } else {
