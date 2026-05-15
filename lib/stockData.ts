@@ -285,8 +285,16 @@ export async function searchStocks(
     const failures = (err as { proxyFailures?: ProxyFailure[] } | null)
       ?.proxyFailures;
     const anyRateLimited = failures?.some((f) => f.status === 429);
+    const any5xx = failures?.some(
+      (f) => typeof f.status === 'number' && f.status >= 500 && f.status <= 599,
+    );
+    const hint = anyRateLimited
+      ? ' (try again shortly)'
+      : any5xx
+        ? ' (temporary outage — try again)'
+        : '';
     throw new Error(
-      `Failed to search stocks for: ${trimmed}${anyRateLimited ? ' (rate limited — try again)' : ''}`,
+      `Failed to search stocks for: ${trimmed}${hint}`,
     );
   }
   const quotes: Array<Record<string, unknown>> =

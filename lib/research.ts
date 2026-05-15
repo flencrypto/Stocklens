@@ -178,6 +178,25 @@ export async function searchAssetCandidates(
   }
 
   // Stock mode
+  const looksLikeTicker =
+    !trimmed.includes(' ') && /^[0-9A-Za-z.^=:_-]{1,15}$/.test(trimmed);
+  if (looksLikeTicker) {
+    try {
+      const data = await fetchStockData(trimmed);
+      return [
+        {
+          type: 'stock',
+          symbol: data.ticker,
+          name: data.name,
+          market: data.exchange || 'Stock Market',
+          quoteType: 'Equity',
+        },
+      ];
+    } catch {
+      // Fall back to Yahoo search for partial queries / non-ticker inputs.
+    }
+  }
+
   const quotes = await searchStocks(trimmed);
   if (quotes.length === 0) {
     throw new Error(`No stocks found for: ${trimmed}`);
