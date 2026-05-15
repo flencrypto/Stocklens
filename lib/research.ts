@@ -66,6 +66,14 @@ function quoteTypeLabel(quoteType: string | null | undefined): string {
   return 'Equity';
 }
 
+function looksLikeNotFoundError(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  if (status === 404) return true;
+  const msg = err instanceof Error ? err.message : String(err || '');
+  const lower = msg.toLowerCase();
+  return lower.includes('no results found') || lower.includes('invalid ticker');
+}
+
 function classifyStockAsset(data: StockData): string {
   const sector = (data.sector || '').toLowerCase();
   const industry = (data.industry || '').toLowerCase();
@@ -217,8 +225,24 @@ export async function searchAssetCandidates(
           quoteType: quoteTypeLabel(data.quoteType),
         },
       ];
-    } catch {
-      // Fall back to Yahoo search when direct ticker lookup fails.
+    } catch (err) {
+      // If exact-symbol lookup failed due proxy/rate-limit issues, still return
+      // a direct candidate so the user can continue without Yahoo search.
+      if (!looksLikeNotFoundError(err)) {
+        const symbol = trimmed.toUpperCase();
+        // Minimal placeholder metadata for transient lookup failures. The
+        // detailed profile/market labeling is fetched in `researchByCandidate`.
+        return [
+          {
+            type: 'stock',
+            symbol,
+            name: symbol,
+            market: 'Stock Market',
+            quoteType: 'Equity',
+          },
+        ];
+      }
+      // Fall back to Yahoo search when direct lookup returns "not found".
     }
   }
 
