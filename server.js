@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs");
+const fsp = require("fs/promises");
 
 require("dotenv").config();
 
@@ -9,11 +10,27 @@ const OpenAI = require("openai").default;
 
 const app = express();
 
-app.use(cors());
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("Origin not allowed by CORS"));
+    },
+  }),
+);
 app.use(express.json({ limit: "25mb" }));
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
 const PORT = Number(process.env.PORT || 3001);
+const HOST = process.env.HOST || "127.0.0.1";
 const OUTPUT_DIR = path.join(process.cwd(), "outputs");
 
 app.use("/outputs", express.static(OUTPUT_DIR));
@@ -123,10 +140,11 @@ ${stockLensInstructions}
     if (b64) {
       const slug = safeFileSlug(ticker || userPrompt);
       const today = new Date().toISOString().slice(0, 10);
-      const filename = `${slug}_MrFLENS_StockLENS_One_Page_DeepDive_${today}.png`;
+      const uniqueSuffix = safeFileSlug(response.id || String(Date.now()));
+      const filename = `${slug}_MrFLENS_StockLENS_One_Page_DeepDive_${today}_${uniqueSuffix}.png`;
       const filepath = path.join(OUTPUT_DIR, filename);
 
-      fs.writeFileSync(filepath, Buffer.from(b64, "base64"));
+      await fsp.writeFile(filepath, Buffer.from(b64, "base64"));
       imageUrl = `/outputs/${filename}`;
     }
 
@@ -144,7 +162,7 @@ ${stockLensInstructions}
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Stock-LENS API running on port ${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Stock-LENS API running on http://${HOST}:${PORT}`);
 });
 

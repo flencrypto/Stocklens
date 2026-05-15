@@ -34,7 +34,6 @@ export default function StockLensApiEmbed({
 
   const imageHref = useMemo(() => {
     if (!result?.imageUrl) return null;
-    if (!result.imageUrl) return null;
     return resolveImageUrl(endpoint, result.imageUrl);
   }, [endpoint, result?.imageUrl]);
 

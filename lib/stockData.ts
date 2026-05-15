@@ -74,6 +74,42 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+
+function supportsAbortSignalTimeout(): boolean {
+  return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function';
+}
+
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  if (supportsAbortSignalTimeout()) {
+    return fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function isTimeoutOrAbortError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+
+  const name = err.name.toLowerCase();
+  if (name === 'aborterror' || name === 'timeouterror') return true;
+
+  const code = (err as { code?: string } | null)?.code;
+  return typeof code === 'string' && code.toLowerCase().includes('timeout');
+}
+
 async function fetchYahooJson(
   yahooUrl: string,
   maxRetries = 2,
@@ -93,10 +129,7 @@ async function fetchYahooJson(
     // Retry each proxy up to maxRetries times for transient failures
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const res = await fetch(proxiedUrl, {
-          headers: { Accept: 'application/json' },
-          signal: AbortSignal.timeout(10000), // 10 second timeout
-        });
+        const res = await fetchWithTimeout(proxiedUrl, 10000);
         if (!res.ok) {
           lastStatus = res.status;
           const errorMsg = `HTTP ${res.status}`;
@@ -137,7 +170,7 @@ async function fetchYahooJson(
           errors.push(`Proxy ${idx}: ${errorMsg}`);
         }
         // Retry on network errors (timeouts, connection refused, etc.)
-        if (attempt < maxRetries && errorMsg.toLowerCase().includes('timeout')) {
+        if (attempt < maxRetries && isTimeoutOrAbortError(err)) {
           await sleep(Math.min(1000 * Math.pow(2, attempt), 3000));
           continue;
         }
