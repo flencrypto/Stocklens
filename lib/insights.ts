@@ -85,8 +85,8 @@ export async function generateInsights(
     'investment insights. Reference the supplied numbers where relevant ' +
     '(e.g. revenue growth, margins, market cap rank, 30d momentum). ' +
     (exchangeContext
-      ? 'Use the exchange/market-tier context provided to inform comments about ' +
-        'the issuer\'s listing venue, investor base, and index eligibility. '
+      ? "Use the exchange/market-tier context provided to inform comments about " +
+        "the issuer's listing venue, investor base, and index eligibility. "
       : '') +
     'Avoid generic platitudes and never give personalised financial advice. ' +
     'Respond with strict JSON only — no markdown, no commentary.';

@@ -1091,7 +1091,7 @@ export const EXCHANGES: ExchangeInfo[] = [
       {
         name: 'Premier Market',
         tier: 'main',
-        description: "Flagship/liquidity market.",
+        description: 'Flagship liquidity market.',
         notes: 'Largest and most liquid Kuwaiti companies.',
       },
       {
