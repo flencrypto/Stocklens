@@ -45,6 +45,8 @@ export type SearchCandidate =
 
 const prefetchedStockData = new Map<string, StockData>();
 const MAX_PREFETCHED_STOCKS = 20;
+const STOCK_FALLBACK_MARKET = 'Stock Market';
+const STOCK_FALLBACK_QUOTE_TYPE = 'Equity';
 
 function cachePrefetchedStock(data: StockData): void {
   const symbol = data.ticker.toUpperCase();
@@ -67,7 +69,10 @@ function quoteTypeLabel(quoteType: string | null | undefined): string {
 }
 
 function looksLikeNotFoundError(err: unknown): boolean {
-  const status = (err as { status?: number } | null)?.status;
+  const status =
+    err && typeof err === 'object' && 'status' in err
+      ? (err as { status?: unknown }).status
+      : undefined;
   if (status === 404) return true;
   const msg = err instanceof Error ? err.message : String(err || '');
   const lower = msg.toLowerCase();
@@ -221,7 +226,7 @@ export async function searchAssetCandidates(
           type: 'stock',
           symbol: data.ticker,
           name: data.name,
-          market: data.exchange || 'Stock Market',
+          market: data.exchange || STOCK_FALLBACK_MARKET,
           quoteType: quoteTypeLabel(data.quoteType),
         },
       ];
@@ -237,8 +242,8 @@ export async function searchAssetCandidates(
             type: 'stock',
             symbol,
             name: symbol,
-            market: 'Stock Market',
-            quoteType: 'Equity',
+            market: STOCK_FALLBACK_MARKET,
+            quoteType: STOCK_FALLBACK_QUOTE_TYPE,
           },
         ];
       }
@@ -254,7 +259,7 @@ export async function searchAssetCandidates(
     type: 'stock' as const,
     symbol: q.symbol,
     name: q.name,
-    market: q.exchange || 'Stock Market',
+    market: q.exchange || STOCK_FALLBACK_MARKET,
     quoteType: q.type,
   }));
 }
