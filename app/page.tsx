@@ -33,23 +33,16 @@ export default function Home() {
   const [showKeyInput, setShowKeyInput] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  // Load any previously saved key on mount. Falls back to a build-time env
-  // var so the app can be configured at deploy time too. We prefer
-  // `OPENAI_KEY` (the variable name used in the Vercel deployment settings)
-  // and fall back to `NEXT_PUBLIC_OPENAI_API_KEY` for backward compatibility.
+  // Load any previously saved key on mount.
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(OPENAI_KEY_STORAGE);
       if (saved) {
         setOpenaiKey(saved);
-        return;
       }
     } catch {
       // ignore localStorage errors (e.g. private mode)
     }
-    const envKey =
-      process.env.OPENAI_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-    if (envKey) setOpenaiKey(envKey);
   }, []);
 
   const handleKeyChange = (value: string) => {
@@ -319,8 +312,10 @@ export default function Home() {
           )}
           {showKeyInput && (
             <p className="text-[10px] text-slate-600 mt-2">
-              Stored only in your browser&apos;s localStorage. The key is sent directly to
-              api.openai.com from your browser and is never transmitted to our servers.
+              Stored only in your browser&apos;s localStorage. When generating AI insights, the
+              key is sent to this deployment&apos;s <span className="font-mono">/api/insights</span>{' '}
+              endpoint, which forwards the request to OpenAI. AI insights require a deployment
+              that serves this route; static exports fall back to heuristic insights only.
             </p>
           )}
         </div>
@@ -471,4 +466,3 @@ export default function Home() {
     </main>
   );
 }
-

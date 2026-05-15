@@ -57,17 +57,25 @@ You can supply a key in two ways:
 
 1. **At runtime** — click *"Add OpenAI API key for AI-generated insights"*
    under the search bar and paste your key. It is stored only in your
-   browser's `localStorage` and sent directly from your browser to
-   `api.openai.com`.
-2. **At build/deploy time** — set the `OPENAI_KEY` env var (this is the
-   variable name configured in the Vercel project settings as a Sensitive
-   variable for Production and Preview; `NEXT_PUBLIC_OPENAI_API_KEY` is also
-   accepted as a fallback) before running `npm run build` / `npm run dev`.
-   ⚠️ Because Stocklens is a client-rendered app, any value placed in this
-   variable is bundled into the JavaScript shipped to the browser. Only use
-   this option for personal deployments where exposing the key is
-   acceptable; for shared deployments, prefer the runtime input.
+   browser's `localStorage` and sent to this deployment's `/api/insights`
+   endpoint, which forwards the request to OpenAI.
 
-The default model is `gpt-4o-mini`. Insight generation failures are
+The default model is `gpt-4o-mini`.
+
+### Deployment note
+
+Browser-triggered AI insights require a **server-capable Next.js deployment**
+that serves `POST /api/insights` (for example `npm run dev` locally or a
+Node-hosted `npm run build` + `npm run start` deployment). A pure static export
+such as GitHub Pages does **not** include `/api/insights`, so the browser will
+fall back to the app's built-in heuristic insights instead of OpenAI-generated
+ones.
+
+`OPENAI_KEY` can still be set for server-side code paths, but the public
+`/api/insights` endpoint intentionally requires a user-supplied key from the UI
+to avoid turning the deployment into an unauthenticated proxy for the server's
+OpenAI credentials.
+
+Insight generation failures are
 non-fatal — the UI will surface a small notice and continue to render the
 heuristic insights.
