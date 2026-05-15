@@ -1,6 +1,7 @@
 export interface StockData {
   ticker: string;
   name: string;
+  quoteType: string | null;
   sector: string;
   industry: string;
   exchange: string;
@@ -97,6 +98,22 @@ async function fetchWithTimeout(
   }
 }
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 function errorMessage(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
   return String(err);
@@ -104,7 +121,33 @@ function errorMessage(err: unknown): string {
 
 async function readBodySnippet(res: Response, maxChars = 200): Promise<string> {
   try {
-    const text = await res.text();
+    if (res.body && typeof res.body.getReader === 'function') {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+      while (text.length < maxChars) {
+        const { value, done } = await withTimeout(
+          reader.read(),
+          4_000,
+          'Timed out reading response body',
+        );
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+      try {
+        await reader.cancel();
+      } catch {
+        // ignore stream cancellation failures
+      }
+      return text.slice(0, maxChars).trim();
+    }
+
+    const text = await withTimeout(
+      res.text(),
+      4_000,
+      'Timed out reading response body',
+    );
     return text.slice(0, maxChars).trim();
   } catch {
     return '';
@@ -112,11 +155,11 @@ async function readBodySnippet(res: Response, maxChars = 200): Promise<string> {
 }
 
 async function parseJsonResponse(res: Response): Promise<unknown> {
-  const contentType = res.headers.get('content-type') || '';
-  if (contentType.toLowerCase().includes('application/json')) {
-    return await res.json();
-  }
-  const text = await res.text();
+  const text = await withTimeout(
+    res.text(),
+    8_000,
+    'Timed out reading response body',
+  );
   try {
     return JSON.parse(text);
   } catch {
@@ -451,6 +494,8 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
   return {
     ticker: upperTicker,
     name,
+    quoteType:
+      (typeof meta.instrumentType === 'string' && meta.instrumentType) || null,
     sector: 'Unknown',
     industry: 'Unknown',
     exchange,

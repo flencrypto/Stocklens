@@ -43,6 +43,17 @@ export type SearchCandidate =
   | (BaseCandidate & { type: 'stock'; quoteType: string })
   | (BaseCandidate & { type: 'crypto'; id: string; marketCapRank: number | null });
 
+const prefetchedStockData = new Map<string, StockData>();
+
+function quoteTypeLabel(quoteType: string | null | undefined): string {
+  const normalized = (quoteType || '').toUpperCase();
+  if (normalized === 'ETF') return 'ETF';
+  if (normalized === 'MUTUALFUND') return 'Mutual Fund';
+  if (normalized === 'INDEX') return 'Index';
+  if (normalized === 'EQUITY') return 'Equity';
+  return 'Equity';
+}
+
 function classifyStockAsset(data: StockData): string {
   const sector = (data.sector || '').toLowerCase();
   const industry = (data.industry || '').toLowerCase();
@@ -132,7 +143,8 @@ function classifyCryptoAsset(data: CryptoData): string {
 /**
  * Search the requested market for candidates matching the user's query.
  *
- * - In `stock` mode this hits Yahoo Finance's search API and returns
+ * - In `stock` mode this first attempts a direct ticker lookup for exact
+ *   symbols, then falls back to Yahoo Finance's search API and returns
  *   equities/ETFs/funds across all exchanges (including newly listed names).
  * - In `crypto` mode this hits CoinGecko's search API and only returns coins.
  *   A 0x-prefixed Ethereum contract address is treated as a single direct
@@ -183,17 +195,18 @@ export async function searchAssetCandidates(
   if (looksLikeTicker) {
     try {
       const data = await fetchStockData(trimmed);
+      prefetchedStockData.set(data.ticker.toUpperCase(), data);
       return [
         {
           type: 'stock',
           symbol: data.ticker,
           name: data.name,
           market: data.exchange || 'Stock Market',
-          quoteType: 'Equity',
+          quoteType: quoteTypeLabel(data.quoteType),
         },
       ];
     } catch {
-      // Fall back to Yahoo search for partial queries / non-ticker inputs.
+      // Fall back to Yahoo search when direct ticker lookup fails.
     }
   }
 
@@ -238,7 +251,12 @@ export async function researchByCandidate(
   options: ResearchOptions = {},
 ): Promise<ResearchResult> {
   if (candidate.type === 'stock') {
-    const data = await fetchStockData(candidate.symbol);
+    const symbol = candidate.symbol.toUpperCase();
+    const cached = prefetchedStockData.get(symbol);
+    if (cached) {
+      prefetchedStockData.delete(symbol);
+    }
+    const data = cached ?? await fetchStockData(candidate.symbol);
     const result: ResearchResult = {
       type: 'stock',
       data,
