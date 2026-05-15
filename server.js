@@ -6,6 +6,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const { rateLimit } = require("express-rate-limit");
 const OpenAI = require("openai").default;
 
 const app = express();
@@ -34,7 +35,13 @@ const HOST = process.env.HOST || "127.0.0.1";
 const OUTPUT_DIR = path.join(process.cwd(), "outputs");
 const RATE_LIMIT_WINDOW_MS = Number(process.env.STOCKLENS_RATE_LIMIT_WINDOW_MS || 60_000);
 const RATE_LIMIT_MAX_REQUESTS = Number(process.env.STOCKLENS_RATE_LIMIT_MAX_REQUESTS || 10);
-const requestLogByIp = new Map();
+const stockLensLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  limit: RATE_LIMIT_MAX_REQUESTS,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please wait and try again." },
+});
 
 app.use("/outputs", express.static(OUTPUT_DIR));
 
@@ -74,22 +81,8 @@ app.get("/api/stocklens/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/stocklens", async (req, res) => {
+app.post("/api/stocklens", stockLensLimiter, async (req, res) => {
   try {
-    const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
-    const now = Date.now();
-    const windowStart = now - RATE_LIMIT_WINDOW_MS;
-    const requestTimes = (requestLogByIp.get(clientIp) || []).filter((time) => time > windowStart);
-
-    if (requestTimes.length >= RATE_LIMIT_MAX_REQUESTS) {
-      return res.status(429).json({
-        error: "Too many requests. Please wait and try again.",
-      });
-    }
-
-    requestTimes.push(now);
-    requestLogByIp.set(clientIp, requestTimes);
-
     const { message, ticker, horizon } = req.body || {};
 
     if (!message && !ticker) {

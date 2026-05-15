@@ -103,7 +103,7 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
 function isTimeoutOrAbortError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
 
-  const name = err.name.toLowerCase();
+  const name = typeof err.name === 'string' ? err.name.toLowerCase() : '';
   if (name === 'aborterror' || name === 'timeouterror') return true;
 
   const code = (err as { code?: string } | null)?.code;
