@@ -44,6 +44,18 @@ export type SearchCandidate =
   | (BaseCandidate & { type: 'crypto'; id: string; marketCapRank: number | null });
 
 const prefetchedStockData = new Map<string, StockData>();
+const MAX_PREFETCHED_STOCKS = 20;
+
+function cachePrefetchedStock(data: StockData): void {
+  const symbol = data.ticker.toUpperCase();
+  prefetchedStockData.set(symbol, data);
+  if (prefetchedStockData.size > MAX_PREFETCHED_STOCKS) {
+    const oldest = prefetchedStockData.keys().next().value;
+    if (oldest) {
+      prefetchedStockData.delete(oldest);
+    }
+  }
+}
 
 function quoteTypeLabel(quoteType: string | null | undefined): string {
   const normalized = (quoteType || '').toUpperCase();
@@ -195,7 +207,7 @@ export async function searchAssetCandidates(
   if (looksLikeTicker) {
     try {
       const data = await fetchStockData(trimmed);
-      prefetchedStockData.set(data.ticker.toUpperCase(), data);
+      cachePrefetchedStock(data);
       return [
         {
           type: 'stock',
@@ -256,7 +268,7 @@ export async function researchByCandidate(
     if (cached) {
       prefetchedStockData.delete(symbol);
     }
-    const data = cached ?? await fetchStockData(candidate.symbol);
+    const data = cached ?? await fetchStockData(symbol);
     const result: ResearchResult = {
       type: 'stock',
       data,

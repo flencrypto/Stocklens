@@ -98,6 +98,10 @@ async function fetchWithTimeout(
   }
 }
 
+/**
+ * Resolves `promise` unless `timeoutMs` elapses first, in which case it rejects
+ * with `timeoutMessage`.
+ */
 async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -124,23 +128,29 @@ async function readBodySnippet(res: Response, maxChars = 200): Promise<string> {
     if (res.body && typeof res.body.getReader === 'function') {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let text = '';
-      while (text.length < maxChars) {
-        const { value, done } = await withTimeout(
-          reader.read(),
-          4_000,
-          'Timed out reading response body',
-        );
-        if (done) break;
-        text += decoder.decode(value, { stream: true });
-      }
-      text += decoder.decode();
-      try {
-        await reader.cancel();
-      } catch {
-        // ignore stream cancellation failures
-      }
-      return text.slice(0, maxChars).trim();
+      const readPrefix = async (): Promise<string> => {
+        let text = '';
+        try {
+          while (text.length < maxChars) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            text += decoder.decode(value, { stream: true });
+          }
+          text += decoder.decode();
+          return text.slice(0, maxChars).trim();
+        } finally {
+          try {
+            await reader.cancel();
+          } catch {
+            // ignore stream cancellation failures
+          }
+        }
+      };
+      return await withTimeout(
+        readPrefix(),
+        4_000,
+        'Timed out reading response body',
+      );
     }
 
     const text = await withTimeout(
