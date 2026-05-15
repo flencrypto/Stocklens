@@ -75,12 +75,12 @@ async function sleep(ms: number): Promise<void> {
 }
 
 
-function supportsAbortSignalTimeout(): boolean {
+function hasAbortSignalTimeout(): boolean {
   return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function';
 }
 
 async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
-  if (supportsAbortSignalTimeout()) {
+  if (hasAbortSignalTimeout()) {
     return fetch(url, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(timeoutMs),

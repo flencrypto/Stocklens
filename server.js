@@ -32,6 +32,9 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || "127.0.0.1";
 const OUTPUT_DIR = path.join(process.cwd(), "outputs");
+const RATE_LIMIT_WINDOW_MS = Number(process.env.STOCKLENS_RATE_LIMIT_WINDOW_MS || 60_000);
+const RATE_LIMIT_MAX_REQUESTS = Number(process.env.STOCKLENS_RATE_LIMIT_MAX_REQUESTS || 10);
+const requestLogByIp = new Map();
 
 app.use("/outputs", express.static(OUTPUT_DIR));
 
@@ -73,6 +76,20 @@ app.get("/api/stocklens/health", (_req, res) => {
 
 app.post("/api/stocklens", async (req, res) => {
   try {
+    const clientIp = req.ip || req.socket?.remoteAddress || "unknown";
+    const now = Date.now();
+    const windowStart = now - RATE_LIMIT_WINDOW_MS;
+    const requestTimes = (requestLogByIp.get(clientIp) || []).filter((time) => time > windowStart);
+
+    if (requestTimes.length >= RATE_LIMIT_MAX_REQUESTS) {
+      return res.status(429).json({
+        error: "Too many requests. Please wait and try again.",
+      });
+    }
+
+    requestTimes.push(now);
+    requestLogByIp.set(clientIp, requestTimes);
+
     const { message, ticker, horizon } = req.body || {};
 
     if (!message && !ticker) {
@@ -165,4 +182,3 @@ ${stockLensInstructions}
 app.listen(PORT, HOST, () => {
   console.log(`Stock-LENS API running on http://${HOST}:${PORT}`);
 });
-
