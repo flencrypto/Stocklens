@@ -27,6 +27,11 @@ yarn-error.log*
 
 # local env files
 .env*.local
+.env
+
+# local Stock-LENS backend files
+/outputs
+/stocklens-instructions.txt
 
 # vercel
 .vercel

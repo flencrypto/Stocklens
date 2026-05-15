@@ -71,3 +71,48 @@ You can supply a key in two ways:
 The default model is `gpt-4o-mini`. Insight generation failures are
 non-fatal — the UI will surface a small notice and continue to render the
 heuristic insights.
+
+## Stock-LENS one-page backend (local)
+
+This repo also includes a small Express backend (`server.js`) that uses the
+OpenAI Responses API with built-in tools (`web_search` + `image_generation`)
+to generate a **one-page Stock-LENS image** and save it locally under
+`./outputs`.
+
+1. Install deps
+
+```bash
+npm install
+```
+
+2. Create `.env` (start from `.env.example`)
+
+```bash
+cp .env.example .env
+```
+
+3. Create `stocklens-instructions.txt`
+
+Start from `stocklens-instructions.example.txt` and paste your full Mr.FLENS
+Stock-LENS GPT instructions.
+
+4. Run the backend
+
+```bash
+npm run stocklens:server
+```
+
+5. Call it
+
+```js
+await fetch('http://localhost:3001/api/stocklens', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ ticker: 'PL', horizon: '3–5 years' }),
+});
+```
+
+### Frontend embed snippet
+
+See `components/StockLensApiEmbed.tsx` for a drop-in client component that
+calls the backend and displays the returned text + image.
