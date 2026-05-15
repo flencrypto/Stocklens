@@ -68,7 +68,7 @@ function quoteTypeLabel(quoteType: string | null | undefined): string {
   return 'Equity';
 }
 
-function looksLikeNotFoundError(err: unknown): boolean {
+function isTickerNotFoundError(err: unknown): boolean {
   const status =
     err && typeof err === 'object' && 'status' in err
       ? (err as { status?: unknown }).status
@@ -233,7 +233,7 @@ export async function searchAssetCandidates(
     } catch (err) {
       // If exact-symbol lookup failed due proxy/rate-limit issues, still return
       // a direct candidate so the user can continue without Yahoo search.
-      if (!looksLikeNotFoundError(err)) {
+      if (!isTickerNotFoundError(err)) {
         const symbol = trimmed.toUpperCase();
         // Minimal placeholder metadata for transient lookup failures. The
         // detailed profile/market labeling is fetched in `researchByCandidate`.
