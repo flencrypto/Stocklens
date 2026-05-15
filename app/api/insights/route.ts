@@ -109,8 +109,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+function getTrimmedString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function isShortString(value: unknown, maxLength: number) {
-  return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength;
+  const trimmed = getTrimmedString(value);
+  return trimmed.length > 0 && trimmed.length <= maxLength;
 }
 
 function validatePayload(
@@ -137,7 +142,7 @@ function validatePayload(
       continue;
     }
     if (typeof value === 'string') {
-      if (value.length > MAX_STRING_LENGTH) return false;
+      if (getTrimmedString(value).length > MAX_STRING_LENGTH) return false;
       continue;
     }
     if (key === 'categories' && Array.isArray(value)) {
@@ -170,8 +175,8 @@ export async function POST(req: Request) {
 
   const type = body?.type;
   const data = body?.data;
-  const assetClass = typeof body?.assetClass === 'string' ? body.assetClass.trim() : '';
-  const apiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
+  const assetClass = getTrimmedString(body?.assetClass);
+  const apiKey = getTrimmedString(body?.apiKey);
 
   if (type !== 'stock' && type !== 'crypto') {
     return NextResponse.json({ error: 'Invalid or missing asset type' }, { status: 400 });
