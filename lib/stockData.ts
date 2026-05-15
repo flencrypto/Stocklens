@@ -70,48 +70,187 @@ const CORS_PROXIES: ProxyBuilder[] = [
 
 let preferredProxyIndex = 0;
 
+type ProxyFailure = { proxy: string; status?: number; message: string };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  if (typeof AbortController === 'undefined') {
+    return await fetch(url, init);
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  return String(err);
+}
+
+async function readBodySnippet(res: Response, maxChars = 200): Promise<string> {
+  try {
+    const text = await res.text();
+    return text.slice(0, maxChars).trim();
+  } catch {
+    return '';
+  }
+}
+
+async function parseJsonResponse(res: Response): Promise<unknown> {
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.toLowerCase().includes('application/json')) {
+    return await res.json();
+  }
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    const err = new Error('Non-JSON response from proxy') as Error & {
+      bodySnippet?: string;
+    };
+    err.bodySnippet = text.slice(0, 200).trim();
+    throw err;
+  }
+}
+
 async function fetchYahooJson(yahooUrl: string): Promise<unknown> {
   const order: number[] = [];
   for (let i = 0; i < CORS_PROXIES.length; i++) {
     order.push((preferredProxyIndex + i) % CORS_PROXIES.length);
   }
 
-  let lastStatus: number | undefined;
-  let lastError: unknown;
+  const failures: ProxyFailure[] = [];
   for (const idx of order) {
     const proxiedUrl = CORS_PROXIES[idx](yahooUrl);
+
+    let proxyHost = `proxy#${idx + 1}`;
     try {
-      const res = await fetch(proxiedUrl, {
-        headers: { Accept: 'application/json' },
-      });
-      if (!res.ok) {
-        lastStatus = res.status;
-        // 404 from the upstream is a real "not found" signal we want to
-        // surface immediately rather than retrying through other proxies,
-        // because every proxy will return the same 404.
-        if (res.status === 404) {
-          const err = new Error(`HTTP 404`) as Error & { status: number };
-          err.status = 404;
-          throw err;
+      proxyHost = new URL(proxiedUrl).host || proxyHost;
+    } catch {
+      // ignore URL parsing failures
+    }
+
+    // Proxies can be temporarily rate-limited or 5xx; retry quickly with a
+    // small exponential backoff before falling through to the next proxy.
+    const maxAttemptsPerProxy = 2;
+    for (let attempt = 0; attempt < maxAttemptsPerProxy; attempt++) {
+      const backoffMs =
+        250 * Math.pow(2, attempt) + Math.floor(Math.random() * 150);
+      try {
+        const res = await fetchWithTimeout(
+          proxiedUrl,
+          { headers: { Accept: 'application/json' } },
+          12_000,
+        );
+
+        if (!res.ok) {
+          // 404 from the upstream is a real "not found" signal we want to
+          // surface immediately rather than retrying through other proxies,
+          // because every proxy will return the same 404.
+          if (res.status === 404) {
+            const err = new Error(`HTTP 404`) as Error & { status: number };
+            err.status = 404;
+            throw err;
+          }
+
+          const snippet = await readBodySnippet(res);
+          const msg =
+            snippet || (res.status ? `HTTP ${res.status}` : 'Request failed');
+
+          if (
+            isRetryableStatus(res.status) &&
+            attempt < maxAttemptsPerProxy - 1
+          ) {
+            await sleep(backoffMs);
+            continue;
+          }
+
+          failures.push({ proxy: proxyHost, status: res.status, message: msg });
+          break;
         }
-        continue;
+
+        try {
+          const data = await parseJsonResponse(res);
+          preferredProxyIndex = idx;
+          return data;
+        } catch (parseErr) {
+          const bodySnippet = (parseErr as { bodySnippet?: string } | null)
+            ?.bodySnippet;
+          const msg = bodySnippet || errorMessage(parseErr);
+          const looksRateLimited =
+            typeof msg === 'string' &&
+            msg.toLowerCase().includes('too many requests');
+
+          if (
+            looksRateLimited &&
+            attempt < maxAttemptsPerProxy - 1
+          ) {
+            await sleep(backoffMs);
+            continue;
+          }
+
+          failures.push({
+            proxy: proxyHost,
+            status: looksRateLimited ? 429 : undefined,
+            message: msg,
+          });
+          break;
+        }
+      } catch (err) {
+        // If we already classified this as an upstream 404, propagate it.
+        if ((err as { status?: number } | null)?.status === 404) throw err;
+
+        const msg = errorMessage(err);
+        const name = (err as { name?: string } | null)?.name || '';
+        const isTimeout = name === 'AbortError';
+        const looksNetwork =
+          typeof msg === 'string' &&
+          (msg.toLowerCase().includes('failed to fetch') ||
+            msg.toLowerCase().includes('network'));
+
+        if (
+          attempt < maxAttemptsPerProxy - 1 &&
+          (isTimeout || looksNetwork)
+        ) {
+          await sleep(backoffMs);
+          continue;
+        }
+
+        failures.push({
+          proxy: proxyHost,
+          message: isTimeout ? 'Timeout' : msg || 'Request failed',
+        });
+        break;
       }
-      const data = await res.json();
-      preferredProxyIndex = idx;
-      return data;
-    } catch (err) {
-      // If we already classified this as an upstream 404, propagate it.
-      if ((err as { status?: number } | null)?.status === 404) throw err;
-      lastError = err;
     }
   }
 
-  const err = new Error(
-    lastStatus ? `HTTP ${lastStatus}` : 'All CORS proxies failed',
-  ) as Error & { status?: number };
-  if (lastStatus) err.status = lastStatus;
-  if (lastError && !lastStatus) {
-    (err as Error & { cause?: unknown }).cause = lastError;
+  const err = new Error('All CORS proxies failed') as Error & {
+    proxyFailures?: ProxyFailure[];
+    status?: number;
+  };
+  err.proxyFailures = failures;
+  for (let i = failures.length - 1; i >= 0; i--) {
+    const status = failures[i]?.status;
+    if (typeof status === 'number') {
+      err.status = status;
+      break;
+    }
   }
   throw err;
 }
@@ -142,8 +281,13 @@ export async function searchStocks(
   let json: Record<string, unknown>;
   try {
     json = (await fetchYahooJson(yahooUrl)) as Record<string, unknown>;
-  } catch {
-    throw new Error(`Failed to search stocks for: ${trimmed}`);
+  } catch (err) {
+    const failures = (err as { proxyFailures?: ProxyFailure[] } | null)
+      ?.proxyFailures;
+    const anyRateLimited = failures?.some((f) => f.status === 429);
+    throw new Error(
+      `Failed to search stocks for: ${trimmed}${anyRateLimited ? ' (rate limited — try again)' : ''}`,
+    );
   }
   const quotes: Array<Record<string, unknown>> =
     (json?.quotes as Array<Record<string, unknown>>) ?? [];
@@ -226,6 +370,22 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
     json = (await fetchYahooJson(yahooUrl)) as YahooChartResponse;
   } catch (err) {
     const status = (err as { status?: number } | null)?.status;
+    const failures = (err as { proxyFailures?: ProxyFailure[] } | null)
+      ?.proxyFailures;
+
+    if (status !== 404 && failures?.length) {
+      const anyRateLimited = failures.some((f) => f.status === 429);
+      const any5xx = failures.some(
+        (f) => typeof f.status === 'number' && f.status >= 500 && f.status <= 599,
+      );
+      const hint = anyRateLimited
+        ? 'rate limited by Yahoo proxy (try again shortly)'
+        : any5xx
+          ? 'temporary Yahoo proxy outage (try again)'
+          : 'Yahoo proxy unavailable (try again)';
+      throw new Error(`Failed to fetch data for ticker: ${upperTicker} (${hint})`);
+    }
+
     throw new Error(
       status === 404
         ? `No results found for ticker: ${upperTicker}`
