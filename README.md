@@ -59,10 +59,23 @@ You can supply a key in two ways:
    under the search bar and paste your key. It is stored only in your
    browser's `localStorage` and sent to this deployment's `/api/insights`
    endpoint, which forwards the request to OpenAI.
-2. **At deploy time (recommended)** — set the `OPENAI_KEY` env var on the
-   server before running `npm run dev` / `npm run build` + `npm run start`.
-   This keeps the key server-side (it is not bundled into client JavaScript).
 
-The default model is `gpt-4o-mini`. Insight generation failures are
+The default model is `gpt-4o-mini`.
+
+### Deployment note
+
+Browser-triggered AI insights require a **server-capable Next.js deployment**
+that serves `POST /api/insights` (for example `npm run dev` locally or a
+Node-hosted `npm run build` + `npm run start` deployment). A pure static export
+such as GitHub Pages does **not** include `/api/insights`, so the browser will
+fall back to the app's built-in heuristic insights instead of OpenAI-generated
+ones.
+
+`OPENAI_KEY` can still be set for server-side code paths, but the public
+`/api/insights` endpoint intentionally requires a user-supplied key from the UI
+to avoid turning the deployment into an unauthenticated proxy for the server's
+OpenAI credentials.
+
+Insight generation failures are
 non-fatal — the UI will surface a small notice and continue to render the
 heuristic insights.

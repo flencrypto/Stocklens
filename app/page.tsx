@@ -314,9 +314,8 @@ export default function Home() {
             <p className="text-[10px] text-slate-600 mt-2">
               Stored only in your browser&apos;s localStorage. When generating AI insights, the
               key is sent to this deployment&apos;s <span className="font-mono">/api/insights</span>{' '}
-              endpoint, which forwards the request to OpenAI. If this deployment is configured
-              with a server-side <span className="font-mono">OPENAI_KEY</span>, you can leave
-              this blank.
+              endpoint, which forwards the request to OpenAI. AI insights require a deployment
+              that serves this route; static exports fall back to heuristic insights only.
             </p>
           )}
         </div>

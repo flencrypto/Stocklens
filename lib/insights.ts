@@ -9,7 +9,7 @@ export interface AssetInsights {
 }
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const DEFAULT_MODEL = 'gpt-4o-mini';
+export const DEFAULT_INSIGHTS_MODEL = 'gpt-4o-mini';
 
 function normalizeInsights(parsed: Partial<AssetInsights>): AssetInsights {
   const toStringArray = (v: unknown, max = 5): string[] => {
@@ -50,6 +50,13 @@ function buildAssetSnapshot(
     // Truncate long descriptions to keep prompt small.
     if (typeof value === 'string' && value.length > 600) {
       snapshot[key] = value.slice(0, 600) + '…';
+    } else if (Array.isArray(value)) {
+      snapshot[key] = value
+        .slice(0, 12)
+        .map((item) =>
+          typeof item === 'string' ? item.trim().slice(0, 80) : String(item).slice(0, 80),
+        )
+        .filter((item) => item.length > 0);
     } else {
       snapshot[key] = value;
     }
@@ -79,7 +86,7 @@ export async function generateInsightsServer(
   if (!apiKey || !apiKey.trim()) throw new Error('OpenAI API key is required');
 
   const snapshot = buildAssetSnapshot(type, data, assetClass);
-  const model = options?.model || DEFAULT_MODEL;
+  const model = options?.model || DEFAULT_INSIGHTS_MODEL;
 
   const systemPrompt =
     'You are an experienced equity and crypto research analyst. ' +
@@ -157,7 +164,6 @@ async function generateInsightsViaApiRoute(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       apiKey: apiKey?.trim() || '',
-      model: options?.model,
       type,
       data,
       assetClass,
@@ -206,9 +212,7 @@ export async function generateInsights(
   }
 
   const resolvedKey =
-    apiKey?.trim() ||
-    process.env.OPENAI_KEY ||
-    process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+    apiKey?.trim() || process.env.OPENAI_KEY;
   if (!resolvedKey) {
     throw new Error('No OpenAI API key configured. Provide a key to enable AI insights.');
   }
