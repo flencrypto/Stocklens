@@ -1198,8 +1198,8 @@ export const EXCHANGES: ExchangeInfo[] = [
 // Market-cap size thresholds (USD).
 // Large-cap >= $10 B, mid-cap $2 B–$10 B, small-cap < $2 B —
 // aligned with commonly used institutional classification boundaries.
-const LARGE_CAP_THRESHOLD = 10_000_000_000; // $10 B
-const MID_CAP_THRESHOLD = 2_000_000_000;    // $2 B
+export const LARGE_CAP_THRESHOLD = 10_000_000_000; // $10 B
+export const MID_CAP_THRESHOLD = 2_000_000_000;    // $2 B
 
 /**
  * Look up an ExchangeInfo record by Yahoo Finance exchange code or common code.
