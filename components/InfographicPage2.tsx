@@ -738,7 +738,7 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
                 <div className="text-right shrink-0">
                   <div className="text-[9px] text-slate-500 uppercase tracking-widest">Global Rank</div>
                   <div className="text-base font-black text-purple-400">
-                    #{exchangeSummary.rank !== 99 ? exchangeSummary.rank : '—'}
+                    #{exchangeSummary.rank != null ? exchangeSummary.rank : '—'}
                   </div>
                 </div>
               </div>

@@ -24,8 +24,11 @@ export interface ExchangeInfo {
   country: string;
   /** Approximate domestic equity market cap in USD trillions (rounded, from WFE May 2026) */
   marketCapTrn: number;
-  /** WFE / global rank by domestic equity market cap */
-  rank: number;
+  /**
+   * WFE / global rank by domestic equity market cap.
+   * null means the exchange is not in the WFE top-30 ranking.
+   */
+  rank: number | null;
   /** Number of listed companies (approximate) */
   listedCompanies: number;
   segments: MarketSegment[];
@@ -165,7 +168,7 @@ const US_OTC_SEGMENTS: MarketSegment[] = [
 export const EXCHANGES: ExchangeInfo[] = [
   // ── United States ──────────────────────────────────────────────────────────
   {
-    codes: ['NMS', 'NGM', 'NCM', 'XNAS', 'NASDAQ'],
+    codes: ['NMS', 'NGM', 'NCM', 'XNAS', 'NASDAQ', 'NAS', 'NASDAQGS', 'NASDAQGM', 'NASDAQCM'],
     name: 'Nasdaq',
     region: 'United States',
     country: 'United States',
@@ -198,7 +201,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     region: 'United States',
     country: 'United States',
     marketCapTrn: 0,
-    rank: 99,
+    rank: null,
     listedCompanies: 10000,
     segments: US_OTC_SEGMENTS,
     practicalNote:
@@ -390,7 +393,7 @@ export const EXCHANGES: ExchangeInfo[] = [
   },
   // ── Canada ────────────────────────────────────────────────────────────────
   {
-    codes: ['TSX', 'XTSE', 'CVE', 'TRT', 'TSXV', 'TSE'],
+    codes: ['TSX', 'XTSE', 'CVE', 'TRT', 'TSXV'],
     name: 'TMX Group',
     region: 'North America',
     country: 'Canada',
@@ -424,7 +427,7 @@ export const EXCHANGES: ExchangeInfo[] = [
   },
   // ── India ─────────────────────────────────────────────────────────────────
   {
-    codes: ['NSE', 'XNSE', 'NSI', 'BSE', 'XBOM'],
+    codes: ['NSE', 'XNSE', 'NSI'],
     name: 'National Stock Exchange of India',
     region: 'Asia',
     country: 'India',
@@ -839,7 +842,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     region: 'Middle East',
     country: 'UAE',
     marketCapTrn: 0,
-    rank: 99,
+    rank: null,
     listedCompanies: 100,
     segments: [
       {
@@ -1058,7 +1061,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     region: 'Middle East',
     country: 'Qatar',
     marketCapTrn: 0,
-    rank: 99,
+    rank: null,
     listedCompanies: 50,
     segments: [
       {
@@ -1085,7 +1088,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     region: 'Middle East',
     country: 'Kuwait',
     marketCapTrn: 0,
-    rank: 99,
+    rank: null,
     listedCompanies: 170,
     segments: [
       {
@@ -1124,7 +1127,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     region: 'Middle East',
     country: 'Israel',
     marketCapTrn: 0,
-    rank: 99,
+    rank: null,
     listedCompanies: 440,
     segments: [
       {
@@ -1145,7 +1148,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     region: 'Europe',
     country: 'Austria',
     marketCapTrn: 0,
-    rank: 99,
+    rank: null,
     listedCompanies: 60,
     segments: [
       {
@@ -1192,28 +1195,20 @@ export const EXCHANGES: ExchangeInfo[] = [
 // Lookup helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Exchange codes used by Yahoo Finance for the main US market tiers.
- * These are normalised from Yahoo Finance's `exchange` and `fullExchangeName` fields.
- */
-const YF_EXCHANGE_MAP: Record<string, string[]> = {
-  // Nasdaq tiers
-  NMS: ['NMS', 'NGM', 'NCM', 'NASDAQ', 'XNAS'],
-  // NYSE family
-  NYQ: ['NYQ', 'NYS', 'XNYS', 'NYSE'],
-  // London
-  LSE: ['LSE', 'AIM', 'XLON'],
-  // Toronto
-  TSX: ['TSX', 'CVE', 'TRT', 'TSXV'],
-  // Euronext
-  EPA: ['EPA', 'EBR', 'AMS', 'MIL', 'OSL'],
-  // Frankfurt / Xetra
-  FRA: ['FRA', 'ETR', 'XFRA'],
-};
+// Market-cap size thresholds (USD).
+// Large-cap >= $10 B, mid-cap $2 B–$10 B, small-cap < $2 B —
+// aligned with commonly used institutional classification boundaries.
+const LARGE_CAP_THRESHOLD = 10_000_000_000; // $10 B
+const MID_CAP_THRESHOLD = 2_000_000_000;    // $2 B
 
 /**
  * Look up an ExchangeInfo record by Yahoo Finance exchange code or common code.
- * Returns the best matching exchange, or undefined if no match found.
+ * The lookup is case-insensitive. Returns the first matching exchange, or
+ * undefined if no match is found.
+ *
+ * Yahoo Finance returns codes such as 'NMS', 'NGM', 'NCM' for Nasdaq tiers and
+ * 'NasdaqGS', 'NasdaqGM', 'NasdaqCM' in fullExchangeName. Both forms are
+ * included in the EXCHANGES codes arrays so this function matches either.
  */
 export function lookupExchange(code: string): ExchangeInfo | undefined {
   if (!code) return undefined;
@@ -1239,38 +1234,37 @@ export function describeExchangeContext(
 
   const capStr =
     marketCap != null
-      ? marketCap >= 1e11
+      ? marketCap >= LARGE_CAP_THRESHOLD
         ? 'large-cap'
-        : marketCap >= 2e9
+        : marketCap >= MID_CAP_THRESHOLD
         ? 'mid-cap'
         : 'small-cap'
       : null;
 
-  const tierSuffix = capStr ? ` ${capStr} company` : ' company';
-
-  // Determine the most likely listing tier based on code & market cap
+  // Determine the most likely listing tier based on code
   let likelyTier: MarketSegment | undefined;
+  const upper = exchangeCode.toUpperCase();
 
-  // Nasdaq-specific tier detection
-  if (['NMS', 'XNAS'].includes(exchangeCode.toUpperCase())) {
+  if (['NMS', 'XNAS', 'NASDAQGS'].includes(upper)) {
     likelyTier = ex.segments.find((s) => s.name === 'Nasdaq Global Select Market');
-  } else if (['NGM'].includes(exchangeCode.toUpperCase())) {
+  } else if (['NGM', 'NASDAQGM'].includes(upper)) {
     likelyTier = ex.segments.find((s) => s.name === 'Nasdaq Global Market');
-  } else if (['NCM'].includes(exchangeCode.toUpperCase())) {
+  } else if (['NCM', 'NASDAQCM'].includes(upper)) {
     likelyTier = ex.segments.find((s) => s.name === 'Nasdaq Capital Market');
-  } else if (['NYQ', 'NYS', 'XNYS'].includes(exchangeCode.toUpperCase())) {
+  } else if (['NYQ', 'NYS', 'XNYS'].includes(upper)) {
     likelyTier = ex.segments.find((s) => s.name === 'NYSE');
-  } else if (['ASE'].includes(exchangeCode.toUpperCase())) {
+  } else if (['ASE'].includes(upper)) {
     likelyTier = ex.segments.find((s) => s.name === 'NYSE American');
-  } else if (['PCX'].includes(exchangeCode.toUpperCase())) {
+  } else if (['PCX'].includes(upper)) {
     likelyTier = ex.segments.find((s) => s.name === 'NYSE Arca');
   } else {
     // Default to the first main-tier segment
     likelyTier = ex.segments.find((s) => s.tier === 'main') ?? ex.segments[0];
   }
 
+  const rankStr = ex.rank != null ? `market cap rank #${ex.rank} globally` : 'a major global venue';
   const parts: string[] = [
-    `${ex.name} (${ex.region}) — market cap rank #${ex.rank} globally with ~${ex.marketCapTrn}T USD in domestic equity.`,
+    `${ex.name} (${ex.region}) — ${rankStr} with ~${ex.marketCapTrn}T USD in domestic equity.`,
   ];
 
   if (likelyTier) {
@@ -1286,19 +1280,19 @@ export function describeExchangeContext(
   parts.push(`Context: ${ex.practicalNote}`);
 
   if (capStr) {
-    parts.push(`This is a ${capStr}${tierSuffix}.`);
+    parts.push(`This is a ${capStr} company.`);
   }
 
   return parts.join(' ');
 }
 
 /**
- * Return a compact summary of the exchange (2–3 sentences) for UI display.
+ * Return a compact summary of the exchange for UI display.
  */
 export function getExchangeSummary(exchangeCode: string): {
   name: string;
   region: string;
-  rank: number;
+  rank: number | null;
   marketCapTrn: number;
   tier: string;
   practicalNote: string;
@@ -1308,21 +1302,23 @@ export function getExchangeSummary(exchangeCode: string): {
   const ex = lookupExchange(exchangeCode);
   if (!ex) return null;
 
+  const upper = exchangeCode.toUpperCase();
+
   // Best-guess segment name from code
   let tierName = ex.segments[0]?.name ?? 'Listed';
-  if (['NMS', 'XNAS'].includes(exchangeCode.toUpperCase()))
+  if (['NMS', 'XNAS', 'NASDAQGS'].includes(upper))
     tierName = 'Nasdaq Global Select Market';
-  else if (['NGM'].includes(exchangeCode.toUpperCase()))
+  else if (['NGM', 'NASDAQGM'].includes(upper))
     tierName = 'Nasdaq Global Market';
-  else if (['NCM'].includes(exchangeCode.toUpperCase()))
+  else if (['NCM', 'NASDAQCM'].includes(upper))
     tierName = 'Nasdaq Capital Market';
-  else if (['NYQ', 'NYS', 'XNYS'].includes(exchangeCode.toUpperCase()))
+  else if (['NYQ', 'NYS', 'XNYS'].includes(upper))
     tierName = 'NYSE Main';
-  else if (['ASE'].includes(exchangeCode.toUpperCase()))
+  else if (['ASE'].includes(upper))
     tierName = 'NYSE American';
-  else if (['PCX'].includes(exchangeCode.toUpperCase()))
+  else if (['PCX'].includes(upper))
     tierName = 'NYSE Arca';
-  else if (['AIM'].includes(exchangeCode.toUpperCase()))
+  else if (['AIM'].includes(upper))
     tierName = 'AIM (LSE Growth Market)';
 
   return {
@@ -1337,5 +1333,3 @@ export function getExchangeSummary(exchangeCode: string): {
   };
 }
 
-// Re-export for convenience
-export { YF_EXCHANGE_MAP };
