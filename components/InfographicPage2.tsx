@@ -751,7 +751,7 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
                 >
                   <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">Mkt Cap</div>
                   <div className="text-[11px] font-black text-blue-400">
-                    {exchangeSummary.marketCapTrn > 0
+                    {exchangeSummary.marketCapTrn != null && exchangeSummary.marketCapTrn > 0
                       ? `$${exchangeSummary.marketCapTrn}T`
                       : '—'}
                   </div>

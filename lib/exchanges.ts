@@ -22,8 +22,11 @@ export interface ExchangeInfo {
   name: string;
   region: string;
   country: string;
-  /** Approximate domestic equity market cap in USD trillions (rounded, from WFE May 2026) */
-  marketCapTrn: number;
+  /**
+   * Approximate domestic equity market cap in USD trillions (rounded, from WFE May 2026).
+   * null means the figure is not available in the dataset.
+   */
+  marketCapTrn: number | null;
   /**
    * WFE / global rank by domestic equity market cap.
    * null means the exchange is not in the WFE top-30 ranking.
@@ -200,7 +203,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     name: 'OTC Markets',
     region: 'United States',
     country: 'United States',
-    marketCapTrn: 0,
+    marketCapTrn: null,
     rank: null,
     listedCompanies: 10000,
     segments: US_OTC_SEGMENTS,
@@ -393,7 +396,7 @@ export const EXCHANGES: ExchangeInfo[] = [
   },
   // ── Canada ────────────────────────────────────────────────────────────────
   {
-    codes: ['TSX', 'XTSE', 'CVE', 'TRT', 'TSXV'],
+    codes: ['TSX', 'XTSE', 'CVE', 'TRT', 'TSXV', 'TOR'],
     name: 'TMX Group',
     region: 'North America',
     country: 'Canada',
@@ -841,7 +844,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     name: 'Dubai Financial Market',
     region: 'Middle East',
     country: 'UAE',
-    marketCapTrn: 0,
+    marketCapTrn: null,
     rank: null,
     listedCompanies: 100,
     segments: [
@@ -1060,7 +1063,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     name: 'Qatar Stock Exchange',
     region: 'Middle East',
     country: 'Qatar',
-    marketCapTrn: 0,
+    marketCapTrn: null,
     rank: null,
     listedCompanies: 50,
     segments: [
@@ -1087,7 +1090,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     name: 'Boursa Kuwait',
     region: 'Middle East',
     country: 'Kuwait',
-    marketCapTrn: 0,
+    marketCapTrn: null,
     rank: null,
     listedCompanies: 170,
     segments: [
@@ -1126,7 +1129,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     name: 'Tel Aviv Stock Exchange',
     region: 'Middle East',
     country: 'Israel',
-    marketCapTrn: 0,
+    marketCapTrn: null,
     rank: null,
     listedCompanies: 440,
     segments: [
@@ -1147,7 +1150,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     name: 'Vienna Stock Exchange',
     region: 'Europe',
     country: 'Austria',
-    marketCapTrn: 0,
+    marketCapTrn: null,
     rank: null,
     listedCompanies: 60,
     segments: [
@@ -1202,20 +1205,30 @@ export const LARGE_CAP_THRESHOLD = 10_000_000_000; // $10 B
 export const MID_CAP_THRESHOLD = 2_000_000_000;    // $2 B
 
 /**
+ * Precomputed Map from upper-cased exchange code → ExchangeInfo.
+ * Built once at module load for O(1) lookups in `lookupExchange`.
+ * Yahoo Finance returns codes such as 'NMS', 'NGM', 'NCM' for Nasdaq tiers and
+ * 'NasdaqGS', 'NasdaqGM', 'NasdaqCM' in fullExchangeName. Both forms are
+ * included in the EXCHANGES codes arrays so every variant maps correctly.
+ */
+const EXCHANGE_CODE_MAP: Map<string, ExchangeInfo> = (() => {
+  const map = new Map<string, ExchangeInfo>();
+  for (const ex of EXCHANGES) {
+    for (const code of ex.codes) {
+      map.set(code.toUpperCase(), ex);
+    }
+  }
+  return map;
+})();
+
+/**
  * Look up an ExchangeInfo record by Yahoo Finance exchange code or common code.
  * The lookup is case-insensitive. Returns the first matching exchange, or
  * undefined if no match is found.
- *
- * Yahoo Finance returns codes such as 'NMS', 'NGM', 'NCM' for Nasdaq tiers and
- * 'NasdaqGS', 'NasdaqGM', 'NasdaqCM' in fullExchangeName. Both forms are
- * included in the EXCHANGES codes arrays so this function matches either.
  */
 export function lookupExchange(code: string): ExchangeInfo | undefined {
   if (!code) return undefined;
-  const upper = code.toUpperCase().trim();
-  return EXCHANGES.find((ex) =>
-    ex.codes.some((c) => c.toUpperCase() === upper),
-  );
+  return EXCHANGE_CODE_MAP.get(code.toUpperCase().trim());
 }
 
 /**
@@ -1263,8 +1276,9 @@ export function describeExchangeContext(
   }
 
   const rankStr = ex.rank != null ? `market cap rank #${ex.rank} globally` : 'a major global venue';
+  const capTrnStr = ex.marketCapTrn != null ? ` with ~${ex.marketCapTrn}T USD in domestic equity` : '';
   const parts: string[] = [
-    `${ex.name} (${ex.region}) — ${rankStr} with ~${ex.marketCapTrn}T USD in domestic equity.`,
+    `${ex.name} (${ex.region}) — ${rankStr}${capTrnStr}.`,
   ];
 
   if (likelyTier) {
@@ -1293,7 +1307,7 @@ export function getExchangeSummary(exchangeCode: string): {
   name: string;
   region: string;
   rank: number | null;
-  marketCapTrn: number;
+  marketCapTrn: number | null;
   tier: string;
   practicalNote: string;
   indices: string[];
