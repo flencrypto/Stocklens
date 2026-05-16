@@ -185,7 +185,7 @@ export const EXCHANGES: ExchangeInfo[] = [
     sourceIds: ['S11'],
   },
   {
-    codes: ['NYQ', 'NYS', 'XNYS', 'NYSE'],
+    codes: ['NYQ', 'NYS', 'XNYS', 'NYSE', 'ASE', 'PCX'],
     name: 'New York Stock Exchange',
     region: 'United States',
     country: 'United States',
@@ -1231,6 +1231,16 @@ export function lookupExchange(code: string): ExchangeInfo | undefined {
   return EXCHANGE_CODE_MAP.get(code.toUpperCase().trim());
 }
 
+function resolveNyseTierFromCode(
+  exchangeCodeUpper: string,
+): { segmentName: 'NYSE' | 'NYSE American' | 'NYSE Arca'; tierLabel: 'NYSE Main' | 'NYSE American' | 'NYSE Arca' } | null {
+  if (['ASE'].includes(exchangeCodeUpper)) return { segmentName: 'NYSE American', tierLabel: 'NYSE American' };
+  if (['PCX'].includes(exchangeCodeUpper)) return { segmentName: 'NYSE Arca', tierLabel: 'NYSE Arca' };
+  if (['NYQ', 'NYS', 'XNYS', 'NYSE'].includes(exchangeCodeUpper))
+    return { segmentName: 'NYSE', tierLabel: 'NYSE Main' };
+  return null;
+}
+
 /**
  * Return a plain-English string describing the market tier for a stock,
  * suitable for inclusion in an AI prompt or displayed in the UI.
@@ -1257,6 +1267,8 @@ export function describeExchangeContext(
   // Determine the most likely listing tier based on code
   let likelyTier: MarketSegment | undefined;
   const upper = exchangeCode.toUpperCase();
+  const nyseTier =
+    ex.name === 'New York Stock Exchange' ? resolveNyseTierFromCode(upper) : null;
 
   if (['NMS', 'XNAS', 'NASDAQGS'].includes(upper)) {
     likelyTier = ex.segments.find((s) => s.name === 'Nasdaq Global Select Market');
@@ -1264,12 +1276,8 @@ export function describeExchangeContext(
     likelyTier = ex.segments.find((s) => s.name === 'Nasdaq Global Market');
   } else if (['NCM', 'NASDAQCM'].includes(upper)) {
     likelyTier = ex.segments.find((s) => s.name === 'Nasdaq Capital Market');
-  } else if (['NYQ', 'NYS', 'XNYS'].includes(upper)) {
-    likelyTier = ex.segments.find((s) => s.name === 'NYSE');
-  } else if (['ASE'].includes(upper)) {
-    likelyTier = ex.segments.find((s) => s.name === 'NYSE American');
-  } else if (['PCX'].includes(upper)) {
-    likelyTier = ex.segments.find((s) => s.name === 'NYSE Arca');
+  } else if (nyseTier) {
+    likelyTier = ex.segments.find((s) => s.name === nyseTier.segmentName);
   } else {
     // Default to the first main-tier segment
     likelyTier = ex.segments.find((s) => s.tier === 'main') ?? ex.segments[0];
@@ -1317,6 +1325,8 @@ export function getExchangeSummary(exchangeCode: string): {
   if (!ex) return null;
 
   const upper = exchangeCode.toUpperCase();
+  const nyseTier =
+    ex.name === 'New York Stock Exchange' ? resolveNyseTierFromCode(upper) : null;
 
   // Best-guess segment name from code
   let tierName = ex.segments[0]?.name ?? 'Listed';
@@ -1326,12 +1336,7 @@ export function getExchangeSummary(exchangeCode: string): {
     tierName = 'Nasdaq Global Market';
   else if (['NCM', 'NASDAQCM'].includes(upper))
     tierName = 'Nasdaq Capital Market';
-  else if (['NYQ', 'NYS', 'XNYS'].includes(upper))
-    tierName = 'NYSE Main';
-  else if (['ASE'].includes(upper))
-    tierName = 'NYSE American';
-  else if (['PCX'].includes(upper))
-    tierName = 'NYSE Arca';
+  else if (nyseTier) tierName = nyseTier.tierLabel;
   else if (['AIM'].includes(upper))
     tierName = 'AIM (LSE Growth Market)';
 
@@ -1346,4 +1351,3 @@ export function getExchangeSummary(exchangeCode: string): {
     segments: ex.segments,
   };
 }
-
