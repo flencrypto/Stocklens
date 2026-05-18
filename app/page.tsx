@@ -453,7 +453,10 @@ export default function Home() {
                       type="button"
                       onClick={() => {
                         setShowKeyInput(true);
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        const reducedMotion =
+                          typeof window !== 'undefined' &&
+                          window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+                        window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
                       }}
                       className="text-[10px] uppercase tracking-widest underline underline-offset-2 hover:text-amber-300"
                     >

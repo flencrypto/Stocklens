@@ -13,6 +13,15 @@ interface InfographicPage2Props {
   assetClass: string;
 }
 
+const TIER_COLOR_BY_TYPE: Record<string, string> = {
+  main: '#22d3ee',
+  growth: '#4ade80',
+  sme: '#facc15',
+  otc: '#f97316',
+  index: '#a855f7',
+  professional: '#38bdf8',
+};
+
 // Calculate investment score
 function calcScore(type: string, data: StockData | CryptoData): number {
   let score = 5.0;
@@ -387,14 +396,6 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
     ? getExchangeSummary(stockData.exchange || '')
     : null;
   const exchangeLookupValue = stockData?.exchange?.trim() || '';
-  const tierColorByType: Record<string, string> = {
-    main: '#22d3ee',
-    growth: '#4ade80',
-    sme: '#facc15',
-    otc: '#f97316',
-    index: '#a855f7',
-    professional: '#38bdf8',
-  };
 
   // Market opportunity numbers
   const tamEstimate = isStock
@@ -788,7 +789,7 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
               {/* Market segments pills */}
               <div className="flex flex-wrap gap-1 mb-2">
                 {exchangeSummary.segments.map((seg, i) => {
-                  const tierColor = tierColorByType[seg.tier] ?? '#a855f7';
+                  const tierColor = TIER_COLOR_BY_TYPE[seg.tier] ?? '#a855f7';
                   return (
                     <span
                       key={i}
