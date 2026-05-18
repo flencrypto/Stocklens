@@ -479,7 +479,7 @@ export default function Home() {
             </button>
           </div>
           <p className="max-w-4xl mx-auto px-4 -mt-4 mb-5 text-[11px] text-slate-500 no-print">
-            Tip: use your browser&apos;s Print dialog and choose <kbd className="font-semibold">Save as PDF</kbd> for sharing.
+            Tip: use your browser&apos;s Print dialog and choose <kbd className="font-semibold" aria-label="Save as PDF option">Save as PDF</kbd> for sharing.
           </p>
 
           {/* Infographic Pages */}

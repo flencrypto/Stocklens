@@ -848,7 +848,7 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
                 {exchangeLookupValue ? ` (${exchangeLookupValue})` : ''}.
               </div>
               <div className="text-[9px] text-slate-500 mt-1">
-                The market data still loaded, but this exchange code is not yet mapped in the reference dataset.
+                The market data was still loaded, but this exchange code is not yet mapped in the reference dataset.
               </div>
             </div>
           </div>
