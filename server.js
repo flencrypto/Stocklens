@@ -112,8 +112,13 @@ app.get("/api/yahoo", yahooProxyLimiter, async (req, res) => {
       if (!symbol) {
         return res.status(400).json({ error: "Missing query param: symbol" });
       }
-      const safeSymbol = symbol.toUpperCase().replace(/[^A-Z0-9.\-^=]/g, "");
-      if (!safeSymbol) {
+      const safeSymbol = symbol.toUpperCase();
+      const allowedSymbolPatterns = [
+        /^[A-Z0-9.-]{1,15}$/,
+        /^\^[A-Z0-9.-]{1,15}$/,
+        /^[A-Z]{3,10}=X$/,
+      ];
+      if (!allowedSymbolPatterns.some((pattern) => pattern.test(safeSymbol))) {
         return res.status(400).json({ error: "Invalid symbol." });
       }
       upstreamUrl =
@@ -137,7 +142,7 @@ app.get("/api/yahoo", yahooProxyLimiter, async (req, res) => {
         Accept: "application/json",
         "User-Agent": "StocklensYahooProxy/1.0",
       },
-      signal: AbortSignal.timeout(12_000),
+      signal: AbortSignal.timeout(6_000),
     });
 
     const bodyText = await upstream.text();

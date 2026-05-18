@@ -266,7 +266,7 @@ export async function searchStocks(
     json = (await fetchYahooJson(yahooUrl, backendPath)) as Record<string, unknown>;
   } catch {
     throw new Error(
-      'Live stock search is temporarily unavailable. Please retry in a few seconds, or run the local Stock-LENS backend for a more reliable stock feed.',
+      'Live stock search is temporarily unavailable. Please retry in a few seconds, or run `npm run stocklens:server` for the local Stocklens backend and a more reliable stock feed.',
     );
   }
   const quotes: Array<Record<string, unknown>> =

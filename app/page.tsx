@@ -152,7 +152,7 @@ export default function Home() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/splash.jpg"
-                alt="Mr.FLENS Stock-Lens"
+                alt="Mr.FLENS Stocklens"
                 className="w-full h-full object-cover"
               />
             </div>
@@ -322,7 +322,7 @@ export default function Home() {
           )}
           {showKeyInput && (
             <p className="text-[10px] text-slate-600 mt-2">
-              Optional and stored only in your browser&apos;s localStorage. Without a key, Stock-Lens still works using built-in heuristic insights.
+              Optional and stored only in your browser&apos;s localStorage. Without a key, Stocklens still works using built-in heuristic insights.
             </p>
           )}
         </div>
@@ -346,7 +346,7 @@ export default function Home() {
             )}
             {mode === 'stock' && (
               <p className="mt-2 text-xs text-rose-300/90">
-                Stock data can be rate-limited upstream. Retry shortly, or run the local Stock-LENS backend (`npm run stocklens:server`) for a steadier feed.
+                Stock data can be rate-limited upstream. Retry shortly, or run the local Stocklens backend (`npm run stocklens:server`) for a steadier feed.
               </p>
             )}
           </div>
@@ -488,7 +488,7 @@ export default function Home() {
 
       {/* Footer */}
       <div className="text-center py-8 text-[11px] text-slate-700 no-print">
-        Mr.FLENS Stock-Lens — For educational purposes only. Not financial advice.
+        Mr.FLENS Stocklens — For educational purposes only. Not financial advice.
       </div>
     </main>
   );
