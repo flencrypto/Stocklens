@@ -42,6 +42,15 @@ const stockLensLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many requests. Please wait and try again." },
 });
+const yahooProxyLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  limit: RATE_LIMIT_MAX_REQUESTS * 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many market-data requests. Please retry shortly." },
+});
+const ALLOWED_YAHOO_HOSTS = new Set(["query1.finance.yahoo.com"]);
+const ALLOWED_YAHOO_PATH_PREFIXES = ["/v1/finance/search", "/v8/finance/chart"];
 
 app.use("/outputs", express.static(OUTPUT_DIR));
 
@@ -79,6 +88,50 @@ function getBase64ImageFromResponse(response) {
 
 app.get("/api/stocklens/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get("/api/yahoo", yahooProxyLimiter, async (req, res) => {
+  try {
+    const rawUrl = typeof req.query.url === "string" ? req.query.url : "";
+    if (!rawUrl) {
+      return res.status(400).json({ error: "Missing required query param: url" });
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ error: "Invalid URL." });
+    }
+
+    if (parsed.protocol !== "https:") {
+      return res.status(400).json({ error: "Only https URLs are allowed." });
+    }
+    if (!ALLOWED_YAHOO_HOSTS.has(parsed.hostname)) {
+      return res.status(403).json({ error: "Host not allowed." });
+    }
+    if (!ALLOWED_YAHOO_PATH_PREFIXES.some((prefix) => parsed.pathname.startsWith(prefix))) {
+      return res.status(403).json({ error: "Path not allowed." });
+    }
+
+    const upstream = await fetch(parsed.toString(), {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "StocklensYahooProxy/1.0",
+      },
+      signal: AbortSignal.timeout(12_000),
+    });
+
+    const bodyText = await upstream.text();
+    res.status(upstream.status);
+    res.set("Content-Type", "application/json; charset=utf-8");
+    return res.send(bodyText);
+  } catch (error) {
+    return res.status(502).json({
+      error: "Yahoo upstream request failed.",
+      detail: error?.message || String(error),
+    });
+  }
 });
 
 app.post("/api/stocklens", stockLensLimiter, async (req, res) => {

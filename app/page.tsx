@@ -29,6 +29,7 @@ export default function Home() {
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [candidates, setCandidates] = useState<SearchCandidate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastAttempt, setLastAttempt] = useState<{ query: string; mode: SearchMode } | null>(null);
   const [openaiKey, setOpenaiKey] = useState('');
   const [showKeyInput, setShowKeyInput] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -84,19 +85,21 @@ export default function Home() {
   };
 
   const handleSearch = async (q: string, searchMode: SearchMode) => {
-    if (!q.trim()) return;
+    const trimmed = q.trim();
+    if (!trimmed) return;
     setLoading(true);
     setError(null);
     setResult(null);
     setCandidates(null);
+    setLastAttempt({ query: trimmed, mode: searchMode });
 
     try {
-      const matches = await searchAssetCandidates(q.trim(), searchMode);
+      const matches = await searchAssetCandidates(trimmed, searchMode);
       if (matches.length === 0) {
         throw new Error(
           searchMode === 'stock'
-            ? `No stocks found for: ${q.trim()}`
-            : `No crypto found for: ${q.trim()}`,
+            ? `No stocks found for: ${trimmed}`
+            : `No crypto found for: ${trimmed}`,
         );
       }
       if (matches.length === 1) {
@@ -291,7 +294,7 @@ export default function Home() {
           >
             {openaiKey
               ? '🤖 OpenAI key set — AI insights enabled (edit)'
-              : '🤖 Add OpenAI API key for AI-generated insights'}
+              : '🤖 Optional: add OpenAI key for AI insights (heuristic mode works without it)'}
           </button>
           {showKeyInput && (
             <div className="mt-2 flex gap-2 items-center">
@@ -319,8 +322,7 @@ export default function Home() {
           )}
           {showKeyInput && (
             <p className="text-[10px] text-slate-600 mt-2">
-              Stored only in your browser&apos;s localStorage. The key is sent directly to
-              api.openai.com from your browser and is never transmitted to our servers.
+              Optional and stored only in your browser&apos;s localStorage. Without a key, Stock-Lens still works using built-in heuristic insights.
             </p>
           )}
         </div>
@@ -332,6 +334,21 @@ export default function Home() {
             style={{ background: '#1a0a0a', border: '1px solid #991b1b', color: '#fca5a5' }}
           >
             <strong>Error:</strong> {error}
+            {lastAttempt && (
+              <button
+                type="button"
+                onClick={() => handleSearch(lastAttempt.query, lastAttempt.mode)}
+                className="ml-3 px-2 py-1 rounded text-xs font-semibold"
+                style={{ background: '#450a0a', border: '1px solid #991b1b', color: '#fecaca' }}
+              >
+                Retry
+              </button>
+            )}
+            {mode === 'stock' && (
+              <p className="mt-2 text-xs text-rose-300/90">
+                Stock data can be rate-limited upstream. Retry shortly, or run the local Stock-LENS backend (`npm run stocklens:server`) for a steadier feed.
+              </p>
+            )}
           </div>
         )}
 
@@ -344,7 +361,7 @@ export default function Home() {
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm text-slate-300">
                 Found <strong className="text-blue-400">{candidates.length}</strong> matches
-                for &ldquo;{query}&rdquo;. Select one to continue:
+                for &ldquo;{query}&rdquo;. Choose the exact listing/symbol:
               </p>
               <button
                 type="button"
@@ -370,13 +387,18 @@ export default function Home() {
                         <span className="text-sm font-bold text-slate-100 truncate">
                           {c.name}
                         </span>
-                        <span className="text-[11px] text-slate-500">
-                          {c.market} · {sub}
+                        <span className="text-[11px] text-slate-500 flex flex-wrap gap-1">
+                          <span>{c.market}</span>
+                          <span>·</span>
+                          <span>{sub}</span>
                         </span>
                       </span>
-                      <span className="text-xs font-mono font-bold text-blue-400 shrink-0">
-                        {c.symbol}
-                      </span>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className="text-xs text-slate-500 uppercase tracking-widest">Ticker</span>
+                        <span className="text-xs font-mono font-bold text-blue-400">
+                          {c.symbol}
+                        </span>
+                      </div>
                     </button>
                   </li>
                 );
@@ -471,4 +493,3 @@ export default function Home() {
     </main>
   );
 }
-

@@ -145,6 +145,8 @@ export async function searchAssetCandidates(
   mode: SearchMode,
 ): Promise<SearchCandidate[]> {
   const trimmed = query.trim();
+  const queryLower = trimmed.toLowerCase();
+  const queryUpper = trimmed.toUpperCase();
   if (!trimmed) throw new Error('Missing query');
 
   if (mode === 'crypto') {
@@ -167,7 +169,7 @@ export async function searchAssetCandidates(
     if (coins.length === 0) {
       throw new Error(`No crypto found for: ${trimmed}`);
     }
-    return coins.map((c: CryptoSearchResult) => ({
+    const candidates = coins.map((c: CryptoSearchResult) => ({
       type: 'crypto' as const,
       id: c.id,
       symbol: c.symbol,
@@ -175,6 +177,15 @@ export async function searchAssetCandidates(
       market: c.marketCapRank ? `CoinGecko · Rank #${c.marketCapRank}` : 'CoinGecko',
       marketCapRank: c.marketCapRank,
     }));
+    candidates.sort((a, b) => {
+      const aExact = a.symbol === queryUpper || a.name.toLowerCase() === queryLower ? 1 : 0;
+      const bExact = b.symbol === queryUpper || b.name.toLowerCase() === queryLower ? 1 : 0;
+      if (aExact !== bExact) return bExact - aExact;
+      if (a.marketCapRank === null && b.marketCapRank !== null) return 1;
+      if (b.marketCapRank === null && a.marketCapRank !== null) return -1;
+      return (a.marketCapRank ?? Number.MAX_SAFE_INTEGER) - (b.marketCapRank ?? Number.MAX_SAFE_INTEGER);
+    });
+    return candidates;
   }
 
   // Stock mode
@@ -182,13 +193,23 @@ export async function searchAssetCandidates(
   if (quotes.length === 0) {
     throw new Error(`No stocks found for: ${trimmed}`);
   }
-  return quotes.map((q: StockSearchResult) => ({
+  const candidates = quotes.map((q: StockSearchResult) => ({
     type: 'stock' as const,
     symbol: q.symbol,
     name: q.name,
     market: q.exchange || 'Stock Market',
     quoteType: q.type,
   }));
+  candidates.sort((a, b) => {
+    const aExact = a.symbol === queryUpper || a.name.toLowerCase() === queryLower ? 1 : 0;
+    const bExact = b.symbol === queryUpper || b.name.toLowerCase() === queryLower ? 1 : 0;
+    if (aExact !== bExact) return bExact - aExact;
+    const aStarts = a.symbol.startsWith(queryUpper) || a.name.toLowerCase().startsWith(queryLower) ? 1 : 0;
+    const bStarts = b.symbol.startsWith(queryUpper) || b.name.toLowerCase().startsWith(queryLower) ? 1 : 0;
+    if (aStarts !== bStarts) return bStarts - aStarts;
+    return a.symbol.localeCompare(b.symbol);
+  });
+  return candidates;
 }
 
 async function enrichWithInsights(

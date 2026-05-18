@@ -25,6 +25,18 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) and type any asset into the search bar.
 
+### Stock data reliability (recommended for local testing)
+
+Yahoo Finance browser access can be rate-limited by public CORS relays. For a more
+stable stock feed, run the included backend in parallel:
+
+```bash
+npm run stocklens:server
+```
+
+When running locally, the frontend automatically prefers `http://127.0.0.1:3001/api/yahoo`
+for stock lookups and falls back to public relays only if the backend is unavailable.
+
 ### Examples
 
 | Input | Type |
