@@ -11,6 +11,7 @@ export interface AssetInsights {
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_MODEL = 'gpt-4o-mini';
+const seenUnknownExchanges = new Set<string>();
 
 /**
  * Builds a compact, structured snapshot of the asset for the LLM prompt.
@@ -73,10 +74,21 @@ export async function generateInsights(
   let exchangeContext = '';
   if (type === 'stock') {
     const stockData = data as StockData;
-    exchangeContext = describeExchangeContext(
-      stockData.exchange || '',
-      stockData.marketCap,
-    );
+    const exchangeRaw = stockData.exchange || '';
+    exchangeContext = describeExchangeContext(exchangeRaw, stockData.marketCap, {
+      ticker: stockData.ticker,
+    });
+
+    if (
+      !exchangeContext &&
+      exchangeRaw.trim() &&
+      process.env.NODE_ENV !== 'production' &&
+      !seenUnknownExchanges.has(exchangeRaw.trim())
+    ) {
+      seenUnknownExchanges.add(exchangeRaw.trim());
+      // eslint-disable-next-line no-console
+      console.warn('[stocklens] Unknown exchange code/name:', exchangeRaw.trim());
+    }
   }
 
   const systemPrompt =

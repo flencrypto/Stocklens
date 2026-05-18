@@ -393,7 +393,7 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
 
   // Exchange & market context (stocks only)
   const exchangeSummary = isStock && stockData
-    ? getExchangeSummary(stockData.exchange || '')
+    ? getExchangeSummary(stockData.exchange || '', { ticker: stockData.ticker })
     : null;
   const exchangeLookupValue = stockData?.exchange?.trim() || '';
 
@@ -748,7 +748,7 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
                 <div className="text-right shrink-0">
                   <div className="text-[9px] text-slate-500 uppercase tracking-widest">Global Rank</div>
                   <div className="text-base font-black text-purple-400">
-                    #{exchangeSummary.rank != null ? exchangeSummary.rank : '—'}
+                    {exchangeSummary.rank != null ? `#${exchangeSummary.rank}` : 'n/a'}
                   </div>
                 </div>
               </div>
@@ -763,7 +763,7 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
                   <div className="text-[11px] font-black text-blue-400">
                     {exchangeSummary.marketCapTrn != null && exchangeSummary.marketCapTrn > 0
                       ? `$${exchangeSummary.marketCapTrn}T`
-                      : '—'}
+                      : 'n/a'}
                   </div>
                 </div>
                 <div
@@ -788,11 +788,11 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
 
               {/* Market segments pills */}
               <div className="flex flex-wrap gap-1 mb-2">
-                {exchangeSummary.segments.map((seg, i) => {
+                {exchangeSummary.segments.map((seg) => {
                   const tierColor = TIER_COLOR_BY_TYPE[seg.tier] ?? '#a855f7';
                   return (
                     <span
-                      key={i}
+                      key={seg.name}
                       className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full"
                       style={{
                         background: `${tierColor}18`,
@@ -829,6 +829,10 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
                 <p className="text-[9px] text-slate-400 leading-relaxed">
                   {exchangeSummary.practicalNote}
                 </p>
+              </div>
+
+              <div className="mt-2 text-[8px] text-slate-500">
+                Exchange figures are approximate; as of {exchangeSummary.dataAsOf}.
               </div>
             </div>
           </div>

@@ -9,6 +9,8 @@
  * other official exchange materials. Figures rounded; move daily.
  */
 
+export const EXCHANGE_DATA_AS_OF = 'May 2026';
+
 export interface MarketSegment {
   name: string;
   tier: 'main' | 'growth' | 'sme' | 'otc' | 'index' | 'professional';
@@ -1221,14 +1223,53 @@ const EXCHANGE_CODE_MAP: Map<string, ExchangeInfo> = (() => {
   return map;
 })();
 
+const EXCHANGE_NAME_MAP: Map<string, ExchangeInfo> = (() => {
+  const map = new Map<string, ExchangeInfo>();
+  for (const ex of EXCHANGES) {
+    map.set(ex.name.toUpperCase(), ex);
+  }
+  return map;
+})();
+
+const YAHOO_EXCHANGE_ALIASES: Record<string, string> = {
+  // Full exchange names / common Yahoo variants → canonical codes used in EXCHANGES.
+  'NEW YORK STOCK EXCHANGE': 'NYSE',
+  NYSEARCA: 'PCX',
+  'NYSE ARCA': 'PCX',
+  NYSEAMERICAN: 'ASE',
+  'NYSE AMERICAN': 'ASE',
+  NYSEAMEX: 'ASE',
+  'NYSE AMEX': 'ASE',
+  'TORONTO STOCK EXCHANGE': 'TOR',
+  TORONTO: 'TOR',
+};
+
+function normalizeExchangeLookupKey(exchange: string, ticker?: string): string {
+  let upper = exchange.toUpperCase().trim();
+  if (!upper) return '';
+
+  const alias = YAHOO_EXCHANGE_ALIASES[upper];
+  if (alias) upper = alias;
+
+  // Yahoo has been observed to return `TSE` for Toronto listings in some contexts.
+  // Disambiguate with the conventional `.TO` suffix when available.
+  if (upper === 'TSE' && ticker && ticker.toUpperCase().trim().endsWith('.TO')) {
+    upper = 'TOR';
+  }
+
+  return upper;
+}
+
 /**
  * Look up an ExchangeInfo record by Yahoo Finance exchange code or common code.
  * The lookup is case-insensitive. Returns the first matching exchange, or
  * undefined if no match is found.
  */
-export function lookupExchange(code: string): ExchangeInfo | undefined {
-  if (!code) return undefined;
-  return EXCHANGE_CODE_MAP.get(code.toUpperCase().trim());
+export function lookupExchange(exchange: string, options?: { ticker?: string }): ExchangeInfo | undefined {
+  if (!exchange) return undefined;
+  const upper = normalizeExchangeLookupKey(exchange, options?.ticker);
+  if (!upper) return undefined;
+  return EXCHANGE_CODE_MAP.get(upper) ?? EXCHANGE_NAME_MAP.get(upper);
 }
 
 function resolveNyseTierFromCode(
@@ -1241,6 +1282,56 @@ function resolveNyseTierFromCode(
   return null;
 }
 
+function resolveListingMetadata(
+  ex: ExchangeInfo,
+  exchangeCodeUpper: string,
+): {
+  likelySegment: MarketSegment | undefined;
+  tierLabel: string;
+  exchangeNameOverride?: string;
+  rankOverride: number | null;
+  marketCapTrnOverride: number | null;
+} {
+  let likelySegment = ex.segments.find((s) => s.tier === 'main') ?? ex.segments[0];
+  let tierLabel = likelySegment?.name ?? 'Listed';
+  let exchangeNameOverride: string | undefined;
+  let rankOverride: number | null = ex.rank;
+  let marketCapTrnOverride: number | null = ex.marketCapTrn;
+
+  if (ex.name === 'Nasdaq') {
+    if (['NMS', 'XNAS', 'NASDAQGS'].includes(exchangeCodeUpper)) {
+      likelySegment = ex.segments.find((s) => s.name === 'Nasdaq Global Select Market') ?? likelySegment;
+    } else if (['NGM', 'NASDAQGM'].includes(exchangeCodeUpper)) {
+      likelySegment = ex.segments.find((s) => s.name === 'Nasdaq Global Market') ?? likelySegment;
+    } else if (['NCM', 'NASDAQCM'].includes(exchangeCodeUpper)) {
+      likelySegment = ex.segments.find((s) => s.name === 'Nasdaq Capital Market') ?? likelySegment;
+    }
+    tierLabel = likelySegment?.name ?? tierLabel;
+  } else if (ex.name === 'New York Stock Exchange') {
+    const nyseTier = resolveNyseTierFromCode(exchangeCodeUpper);
+    if (nyseTier) {
+      likelySegment = ex.segments.find((s) => s.name === nyseTier.segmentName) ?? likelySegment;
+      tierLabel = nyseTier.tierLabel;
+
+      // NYSE American and NYSE Arca are distinct venues; reuse the NYSE record for
+      // segment intelligence, but avoid presenting NYSE-main rank/market-cap as if
+      // it applied directly to those venues.
+      if (nyseTier.segmentName !== 'NYSE') {
+        exchangeNameOverride = nyseTier.segmentName;
+        rankOverride = null;
+        marketCapTrnOverride = null;
+      }
+    }
+  } else if (ex.name === 'London Stock Exchange') {
+    if (exchangeCodeUpper === 'AIM') {
+      likelySegment = ex.segments.find((s) => s.name === 'AIM') ?? likelySegment;
+      tierLabel = 'AIM (LSE Growth Market)';
+    }
+  }
+
+  return { likelySegment, tierLabel, exchangeNameOverride, rankOverride, marketCapTrnOverride };
+}
+
 /**
  * Return a plain-English string describing the market tier for a stock,
  * suitable for inclusion in an AI prompt or displayed in the UI.
@@ -1251,8 +1342,9 @@ function resolveNyseTierFromCode(
 export function describeExchangeContext(
   exchangeCode: string,
   marketCap?: number | null,
+  options?: { ticker?: string },
 ): string {
-  const ex = lookupExchange(exchangeCode);
+  const ex = lookupExchange(exchangeCode, options);
   if (!ex) return '';
 
   const capStr =
@@ -1265,33 +1357,26 @@ export function describeExchangeContext(
       : null;
 
   // Determine the most likely listing tier based on code
-  let likelyTier: MarketSegment | undefined;
-  const upper = exchangeCode.toUpperCase();
-  const nyseTier =
-    ex.name === 'New York Stock Exchange' ? resolveNyseTierFromCode(upper) : null;
+  const upper = normalizeExchangeLookupKey(exchangeCode, options?.ticker);
+  const { likelySegment, exchangeNameOverride, rankOverride, marketCapTrnOverride } =
+    resolveListingMetadata(ex, upper);
 
-  if (['NMS', 'XNAS', 'NASDAQGS'].includes(upper)) {
-    likelyTier = ex.segments.find((s) => s.name === 'Nasdaq Global Select Market');
-  } else if (['NGM', 'NASDAQGM'].includes(upper)) {
-    likelyTier = ex.segments.find((s) => s.name === 'Nasdaq Global Market');
-  } else if (['NCM', 'NASDAQCM'].includes(upper)) {
-    likelyTier = ex.segments.find((s) => s.name === 'Nasdaq Capital Market');
-  } else if (nyseTier) {
-    likelyTier = ex.segments.find((s) => s.name === nyseTier.segmentName);
-  } else {
-    // Default to the first main-tier segment
-    likelyTier = ex.segments.find((s) => s.tier === 'main') ?? ex.segments[0];
-  }
-
-  const rankStr = ex.rank != null ? `market cap rank #${ex.rank} globally` : 'a major global venue';
-  const capTrnStr = ex.marketCapTrn != null ? ` with ~${ex.marketCapTrn}T USD in domestic equity` : '';
+  const venueName = exchangeNameOverride ?? ex.name;
+  const rankStr =
+    rankOverride != null
+      ? `market cap rank #${rankOverride} globally`
+      : exchangeNameOverride
+        ? 'a major US venue'
+        : 'a major global venue';
+  const capTrnStr =
+    marketCapTrnOverride != null ? ` with ~${marketCapTrnOverride}T USD in domestic equity` : '';
   const parts: string[] = [
-    `${ex.name} (${ex.region}) — ${rankStr}${capTrnStr}.`,
+    `${venueName} (${ex.region}) — ${rankStr}${capTrnStr}. Figures as of ${EXCHANGE_DATA_AS_OF}.`,
   ];
 
-  if (likelyTier) {
+  if (likelySegment) {
     parts.push(
-      `Listing segment: ${likelyTier.name} — ${likelyTier.description} ${likelyTier.notes}`,
+      `Listing segment: ${likelySegment.name} — ${likelySegment.description} ${likelySegment.notes}`,
     );
   }
 
@@ -1311,41 +1396,31 @@ export function describeExchangeContext(
 /**
  * Return a compact summary of the exchange for UI display.
  */
-export function getExchangeSummary(exchangeCode: string): {
+export function getExchangeSummary(exchangeCode: string, options?: { ticker?: string }): {
   name: string;
   region: string;
   rank: number | null;
   marketCapTrn: number | null;
   tier: string;
+  dataAsOf: string;
   practicalNote: string;
   indices: string[];
   segments: MarketSegment[];
 } | null {
-  const ex = lookupExchange(exchangeCode);
+  const ex = lookupExchange(exchangeCode, options);
   if (!ex) return null;
 
-  const upper = exchangeCode.toUpperCase();
-  const nyseTier =
-    ex.name === 'New York Stock Exchange' ? resolveNyseTierFromCode(upper) : null;
-
-  // Best-guess segment name from code
-  let tierName = ex.segments[0]?.name ?? 'Listed';
-  if (['NMS', 'XNAS', 'NASDAQGS'].includes(upper))
-    tierName = 'Nasdaq Global Select Market';
-  else if (['NGM', 'NASDAQGM'].includes(upper))
-    tierName = 'Nasdaq Global Market';
-  else if (['NCM', 'NASDAQCM'].includes(upper))
-    tierName = 'Nasdaq Capital Market';
-  else if (nyseTier) tierName = nyseTier.tierLabel;
-  else if (['AIM'].includes(upper))
-    tierName = 'AIM (LSE Growth Market)';
+  const upper = normalizeExchangeLookupKey(exchangeCode, options?.ticker);
+  const { tierLabel, exchangeNameOverride, rankOverride, marketCapTrnOverride } =
+    resolveListingMetadata(ex, upper);
 
   return {
-    name: ex.name,
+    name: exchangeNameOverride ?? ex.name,
     region: ex.region,
-    rank: ex.rank,
-    marketCapTrn: ex.marketCapTrn,
-    tier: tierName,
+    rank: rankOverride,
+    marketCapTrn: marketCapTrnOverride,
+    tier: tierLabel,
+    dataAsOf: EXCHANGE_DATA_AS_OF,
     practicalNote: ex.practicalNote,
     indices: ex.indices,
     segments: ex.segments,
