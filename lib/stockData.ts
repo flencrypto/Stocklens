@@ -57,7 +57,6 @@ const CORS_PROXIES: ProxyBuilder[] = [
   (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`,
   (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}`,
-  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
 ];
 
 let preferredProxyIndex = 0;

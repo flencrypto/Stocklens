@@ -195,6 +195,7 @@ export default function Home() {
                     setMode(m);
                     setCandidates(null);
                     setError(null);
+                    setResult(null);
                   }}
                   disabled={loading}
                   className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-50"
@@ -446,8 +447,18 @@ export default function Home() {
                   <span className="ml-2 text-purple-400">· 🤖 AI insights via OpenAI</span>
                 )}
                 {result.insightsError && (
-                  <span className="ml-2 text-amber-400" title={result.insightsError}>
-                    · AI insights unavailable
+                  <span className="ml-2 inline-flex items-center gap-2 text-amber-400" title={result.insightsError}>
+                    <span>· AI insights unavailable</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowKeyInput(true);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="text-[10px] uppercase tracking-widest underline underline-offset-2 hover:text-amber-300"
+                    >
+                      Add OpenAI key
+                    </button>
                   </span>
                 )}
               </p>
@@ -464,6 +475,9 @@ export default function Home() {
               🖨️ Export / Print
             </button>
           </div>
+          <p className="max-w-4xl mx-auto px-4 -mt-4 mb-5 text-[11px] text-slate-500 no-print">
+            Tip: use your browser&apos;s Print dialog and choose <strong>Save as PDF</strong> for sharing.
+          </p>
 
           {/* Infographic Pages */}
           <div className="flex flex-col lg:flex-row justify-center gap-6 px-4 items-start">

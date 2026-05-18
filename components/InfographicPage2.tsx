@@ -386,6 +386,7 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
   const exchangeSummary = isStock && stockData
     ? getExchangeSummary(stockData.exchange || '')
     : null;
+  const exchangeLookupValue = stockData?.exchange?.trim() || '';
 
   // Market opportunity numbers
   const tamEstimate = isStock
@@ -779,16 +780,15 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
               {/* Market segments pills */}
               <div className="flex flex-wrap gap-1 mb-2">
                 {exchangeSummary.segments.map((seg, i) => {
-                  const tierColor =
-                    seg.tier === 'main'
-                      ? '#22d3ee'
-                      : seg.tier === 'growth'
-                      ? '#4ade80'
-                      : seg.tier === 'sme'
-                      ? '#facc15'
-                      : seg.tier === 'otc'
-                      ? '#f97316'
-                      : '#a855f7';
+                  const tierColorByType: Record<string, string> = {
+                    main: '#22d3ee',
+                    growth: '#4ade80',
+                    sme: '#facc15',
+                    otc: '#f97316',
+                    index: '#a855f7',
+                    professional: '#38bdf8',
+                  };
+                  const tierColor = tierColorByType[seg.tier] ?? '#a855f7';
                   return (
                     <span
                       key={i}
@@ -828,6 +828,26 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
                 <p className="text-[9px] text-slate-400 leading-relaxed">
                   {exchangeSummary.practicalNote}
                 </p>
+              </div>
+            </div>
+          </div>
+        )}
+        {isStock && !exchangeSummary && (
+          <div>
+            <div className="section-header">Exchange &amp; Market Context</div>
+            <div
+              className="rounded-lg p-3"
+              style={{
+                background: 'linear-gradient(135deg, #0a0f1a, #0D1422)',
+                border: '1px solid #1E2D47',
+              }}
+            >
+              <div className="text-[10px] text-slate-300 leading-relaxed">
+                Exchange context is unavailable for this listing
+                {exchangeLookupValue ? ` (${exchangeLookupValue})` : ''}.
+              </div>
+              <div className="text-[9px] text-slate-500 mt-1">
+                The market data still loaded, but this exchange code is not yet mapped in the reference dataset.
               </div>
             </div>
           </div>
