@@ -177,15 +177,19 @@ export async function searchAssetCandidates(
       market: c.marketCapRank ? `CoinGecko · Rank #${c.marketCapRank}` : 'CoinGecko',
       marketCapRank: c.marketCapRank,
     }));
-    candidates.sort((a, b) => {
-      const aExact = a.symbol === queryUpper || a.name.toLowerCase() === queryLower ? 1 : 0;
-      const bExact = b.symbol === queryUpper || b.name.toLowerCase() === queryLower ? 1 : 0;
+    const ranked = candidates.map((candidate) => ({
+      candidate,
+      lowerName: candidate.name.toLowerCase(),
+    }));
+    ranked.sort((a, b) => {
+      const aExact = a.candidate.symbol === queryUpper || a.lowerName === queryLower ? 1 : 0;
+      const bExact = b.candidate.symbol === queryUpper || b.lowerName === queryLower ? 1 : 0;
       if (aExact !== bExact) return bExact - aExact;
-      if (a.marketCapRank === null && b.marketCapRank !== null) return 1;
-      if (b.marketCapRank === null && a.marketCapRank !== null) return -1;
-      return (a.marketCapRank ?? Number.MAX_SAFE_INTEGER) - (b.marketCapRank ?? Number.MAX_SAFE_INTEGER);
+      if (a.candidate.marketCapRank === null && b.candidate.marketCapRank !== null) return 1;
+      if (b.candidate.marketCapRank === null && a.candidate.marketCapRank !== null) return -1;
+      return (a.candidate.marketCapRank ?? Number.MAX_SAFE_INTEGER) - (b.candidate.marketCapRank ?? Number.MAX_SAFE_INTEGER);
     });
-    return candidates;
+    return ranked.map((entry) => entry.candidate);
   }
 
   // Stock mode
@@ -200,16 +204,22 @@ export async function searchAssetCandidates(
     market: q.exchange || 'Stock Market',
     quoteType: q.type,
   }));
-  candidates.sort((a, b) => {
-    const aExact = a.symbol === queryUpper || a.name.toLowerCase() === queryLower ? 1 : 0;
-    const bExact = b.symbol === queryUpper || b.name.toLowerCase() === queryLower ? 1 : 0;
+  const ranked = candidates.map((candidate) => ({
+    candidate,
+    lowerName: candidate.name.toLowerCase(),
+  }));
+  ranked.sort((a, b) => {
+    const aExact = a.candidate.symbol === queryUpper || a.lowerName === queryLower ? 1 : 0;
+    const bExact = b.candidate.symbol === queryUpper || b.lowerName === queryLower ? 1 : 0;
     if (aExact !== bExact) return bExact - aExact;
-    const aStarts = a.symbol.startsWith(queryUpper) || a.name.toLowerCase().startsWith(queryLower) ? 1 : 0;
-    const bStarts = b.symbol.startsWith(queryUpper) || b.name.toLowerCase().startsWith(queryLower) ? 1 : 0;
+    const aStarts =
+      a.candidate.symbol.startsWith(queryUpper) || a.lowerName.startsWith(queryLower) ? 1 : 0;
+    const bStarts =
+      b.candidate.symbol.startsWith(queryUpper) || b.lowerName.startsWith(queryLower) ? 1 : 0;
     if (aStarts !== bStarts) return bStarts - aStarts;
-    return a.symbol.localeCompare(b.symbol);
+    return a.candidate.symbol.localeCompare(b.candidate.symbol);
   });
-  return candidates;
+  return ranked.map((entry) => entry.candidate);
 }
 
 async function enrichWithInsights(

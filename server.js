@@ -92,29 +92,47 @@ app.get("/api/stocklens/health", (_req, res) => {
 
 app.get("/api/yahoo", yahooProxyLimiter, async (req, res) => {
   try {
-    const rawUrl = typeof req.query.url === "string" ? req.query.url : "";
-    if (!rawUrl) {
-      return res.status(400).json({ error: "Missing required query param: url" });
+    const endpoint = typeof req.query.endpoint === "string" ? req.query.endpoint : "";
+    let upstreamUrl = "";
+
+    if (endpoint === "search") {
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      const quotesCount = Number(req.query.quotesCount || 10);
+      if (!q) {
+        return res.status(400).json({ error: "Missing query param: q" });
+      }
+      const safeLimit = Number.isFinite(quotesCount)
+        ? Math.max(1, Math.min(50, Math.trunc(quotesCount)))
+        : 10;
+      upstreamUrl =
+        `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}` +
+        `&quotesCount=${safeLimit}&newsCount=0&listsCount=0`;
+    } else if (endpoint === "chart") {
+      const symbol = typeof req.query.symbol === "string" ? req.query.symbol.trim() : "";
+      if (!symbol) {
+        return res.status(400).json({ error: "Missing query param: symbol" });
+      }
+      const safeSymbol = symbol.toUpperCase().replace(/[^A-Z0-9.\-^=]/g, "");
+      if (!safeSymbol) {
+        return res.status(400).json({ error: "Invalid symbol." });
+      }
+      upstreamUrl =
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(safeSymbol)}` +
+        "?interval=1d&range=1d";
+    } else {
+      return res.status(400).json({ error: "Unsupported endpoint." });
     }
 
-    let parsed;
-    try {
-      parsed = new URL(rawUrl);
-    } catch {
-      return res.status(400).json({ error: "Invalid URL." });
+    const parsed = new URL(upstreamUrl);
+    if (
+      parsed.protocol !== "https:" ||
+      !ALLOWED_YAHOO_HOSTS.has(parsed.hostname) ||
+      !ALLOWED_YAHOO_PATH_PREFIXES.some((prefix) => parsed.pathname.startsWith(prefix))
+    ) {
+      return res.status(500).json({ error: "Server misconfiguration for Yahoo route allowlist." });
     }
 
-    if (parsed.protocol !== "https:") {
-      return res.status(400).json({ error: "Only https URLs are allowed." });
-    }
-    if (!ALLOWED_YAHOO_HOSTS.has(parsed.hostname)) {
-      return res.status(403).json({ error: "Host not allowed." });
-    }
-    if (!ALLOWED_YAHOO_PATH_PREFIXES.some((prefix) => parsed.pathname.startsWith(prefix))) {
-      return res.status(403).json({ error: "Path not allowed." });
-    }
-
-    const upstream = await fetch(parsed.toString(), {
+    const upstream = await fetch(upstreamUrl, {
       headers: {
         Accept: "application/json",
         "User-Agent": "StocklensYahooProxy/1.0",
@@ -123,9 +141,10 @@ app.get("/api/yahoo", yahooProxyLimiter, async (req, res) => {
     });
 
     const bodyText = await upstream.text();
-    res.status(upstream.status);
-    res.set("Content-Type", "application/json; charset=utf-8");
-    return res.send(bodyText);
+    return res
+      .status(upstream.status)
+      .set("Content-Type", "application/json; charset=utf-8")
+      .send(bodyText);
   } catch (error) {
     return res.status(502).json({
       error: "Yahoo upstream request failed.",

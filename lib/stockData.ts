@@ -121,15 +121,20 @@ function getBackendProxyBases(): string[] {
   return Array.from(new Set(bases));
 }
 
-function buildTargets(yahooUrl: string): Array<{ label: string; url: string; isPublicProxy: boolean }> {
+function buildTargets(
+  yahooUrl: string,
+  backendPath: string | null,
+): Array<{ label: string; url: string; isPublicProxy: boolean }> {
   const targets: Array<{ label: string; url: string; isPublicProxy: boolean }> = [];
 
-  for (const base of getBackendProxyBases()) {
-    targets.push({
-      label: `backend(${base})`,
-      url: `${base}/api/yahoo?url=${encodeURIComponent(yahooUrl)}`,
-      isPublicProxy: false,
-    });
+  if (backendPath) {
+    for (const base of getBackendProxyBases()) {
+      targets.push({
+        label: `backend(${base})`,
+        url: `${base}${backendPath}`,
+        isPublicProxy: false,
+      });
+    }
   }
 
   const order: number[] = [];
@@ -149,13 +154,14 @@ function buildTargets(yahooUrl: string): Array<{ label: string; url: string; isP
 
 async function fetchYahooJson(
   yahooUrl: string,
+  backendPath: string | null,
   maxRetries = 2,
 ): Promise<unknown> {
   let lastStatus: number | undefined;
   let lastError: unknown;
   const errors: string[] = [];
 
-  const targets = buildTargets(yahooUrl);
+  const targets = buildTargets(yahooUrl, backendPath);
 
   for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
     const target = targets[targetIndex];
@@ -251,10 +257,13 @@ export async function searchStocks(
   const yahooUrl =
     `${YF_BASE}/v1/finance/search?q=${encodeURIComponent(trimmed)}` +
     `&quotesCount=${limit}&newsCount=0&listsCount=0`;
+  const backendPath =
+    `/api/yahoo?endpoint=search&q=${encodeURIComponent(trimmed)}` +
+    `&quotesCount=${encodeURIComponent(String(limit))}`;
 
   let json: Record<string, unknown>;
   try {
-    json = (await fetchYahooJson(yahooUrl)) as Record<string, unknown>;
+    json = (await fetchYahooJson(yahooUrl, backendPath)) as Record<string, unknown>;
   } catch {
     throw new Error(
       'Live stock search is temporarily unavailable. Please retry in a few seconds, or run the local Stock-LENS backend for a more reliable stock feed.',
@@ -335,10 +344,11 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
   // basic price/exchange/52-week metadata and leave the deeper financial
   // fields as null (the UI already handles missing values gracefully).
   const yahooUrl = `${YF_BASE}/v8/finance/chart/${encodeURIComponent(upperTicker)}?interval=1d&range=1d`;
+  const backendPath = `/api/yahoo?endpoint=chart&symbol=${encodeURIComponent(upperTicker)}`;
 
   let json: YahooChartResponse;
   try {
-    json = (await fetchYahooJson(yahooUrl)) as YahooChartResponse;
+    json = (await fetchYahooJson(yahooUrl, backendPath)) as YahooChartResponse;
   } catch (err) {
     const status = (err as { status?: number } | null)?.status;
     throw new Error(
