@@ -36,8 +36,9 @@ export default function Home() {
 
   // Load any previously saved key on mount. Falls back to a build-time env
   // var so the app can be configured at deploy time too. We prefer
-  // `OPENAI_KEY` (the variable name used in the Vercel deployment settings)
-  // and fall back to `NEXT_PUBLIC_OPENAI_API_KEY` for backward compatibility.
+  // `NEXT_PUBLIC_OPENAI_API_KEY` for backward compatibility. On Vercel,
+  // preferred configuration is server-side env vars consumed by `/api/insights`
+  // (no browser key required).
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(OPENAI_KEY_STORAGE);
@@ -48,8 +49,7 @@ export default function Home() {
     } catch {
       // ignore localStorage errors (e.g. private mode)
     }
-    const envKey =
-      process.env.OPENAI_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+    const envKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
     if (envKey) setOpenaiKey(envKey);
   }, []);
 
@@ -295,7 +295,7 @@ export default function Home() {
           >
             {openaiKey
               ? '🤖 OpenAI key set — AI insights enabled (edit)'
-              : '🤖 Optional: add OpenAI key for AI insights (heuristic mode works without it)'}
+              : '🤖 Optional: add API key for AI insights (Vercel env keys also work)'}
           </button>
           {showKeyInput && (
             <div className="mt-2 flex gap-2 items-center">
@@ -323,7 +323,7 @@ export default function Home() {
           )}
           {showKeyInput && (
             <p className="text-[10px] text-slate-600 mt-2">
-              Optional and stored only in your browser&apos;s localStorage. Without a key, Stocklens still works using built-in heuristic insights.
+              Optional and stored only in your browser&apos;s localStorage. If deployed on Vercel with `OPENAI_API_KEY`/`OPENAI_KEY` or `XAI_API_KEY`, you can leave this blank.
             </p>
           )}
         </div>

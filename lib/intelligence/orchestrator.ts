@@ -7,8 +7,12 @@ import { buildDefaultSourcePack } from '@/lib/intelligence/sourcePack';
 import { auditCitations } from '@/lib/intelligence/trustEngine';
 import { Claim, IntelligenceResult, Source, WedgeBrief10Min } from '@/lib/intelligence/types';
 
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const DEFAULT_MODEL = 'gpt-4o-mini';
+type Provider = 'openai' | 'xai';
+
+const PROVIDERS: Record<Provider, { url: string; defaultModel: string }> = {
+  openai: { url: 'https://api.openai.com/v1/chat/completions', defaultModel: 'gpt-4o-mini' },
+  xai: { url: 'https://api.x.ai/v1/chat/completions', defaultModel: 'grok-2-mini' },
+};
 
 interface OpenAIChoice {
   message?: { content?: string };
@@ -250,12 +254,13 @@ function userPrompt(params: {
 async function callOpenAI(params: {
   apiKey: string;
   model: string;
+  url: string;
   system: string;
   user: string;
   signal?: AbortSignal;
   temperature: number;
 }): Promise<string> {
-  const res = await fetch(OPENAI_URL, {
+  const res = await fetch(params.url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -293,14 +298,19 @@ function stringifyForCompliance(result: { brief: WedgeBrief10Min; claims: Claim[
 
 export async function generateIntelligence(params: {
   apiKey: string;
+  provider?: Provider;
   type: 'stock' | 'crypto';
   data: StockData | CryptoData;
   assetClass: string;
-  options?: { model?: string; signal?: AbortSignal };
+  options?: { model?: string; signal?: AbortSignal; baseUrl?: string };
 }): Promise<IntelligenceResult> {
   if (!params.apiKey || !params.apiKey.trim()) {
     throw new Error('OpenAI API key is required');
   }
+
+  const provider: Provider = params.provider || 'openai';
+  const providerCfg = PROVIDERS[provider];
+  const url = params.options?.baseUrl || providerCfg.url;
 
   const retrievedAt = nowIso();
   const snapshot = buildSnapshot(params.type, params.data, params.assetClass);
@@ -315,7 +325,7 @@ export async function generateIntelligence(params: {
   }
 
   const sources = buildDefaultSourcePack({ type: params.type, data: params.data, exchangeContext });
-  const model = params.options?.model || DEFAULT_MODEL;
+  const model = params.options?.model || providerCfg.defaultModel;
 
   const system = systemPrompt(exchangeContext);
   const user = userPrompt({ snapshot, allowedSources: sources, missingData, exchangeContext });
@@ -324,6 +334,7 @@ export async function generateIntelligence(params: {
     const content = await callOpenAI({
       apiKey: params.apiKey,
       model,
+      url,
       system,
       user,
       signal: params.options?.signal,
@@ -376,6 +387,7 @@ export async function generateIntelligence(params: {
 
     return {
       version: 1,
+      provider,
       retrievedAt,
       sources,
       claims: second.claims,
@@ -398,6 +410,7 @@ export async function generateIntelligence(params: {
 
   return {
     version: 1,
+    provider,
     retrievedAt,
     sources,
     claims: first.claims,

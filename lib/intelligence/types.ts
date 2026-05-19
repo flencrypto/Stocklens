@@ -68,6 +68,7 @@ export interface TrustEngineReport {
 
 export interface IntelligenceResult {
   version: 1;
+  provider: 'openai' | 'xai';
   retrievedAt: string;
   sources: Source[];
   claims: Claim[];
@@ -76,4 +77,3 @@ export interface IntelligenceResult {
   compliance: ComplianceReport;
   trust: TrustEngineReport;
 }
-

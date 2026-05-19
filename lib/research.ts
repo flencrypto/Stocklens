@@ -235,12 +235,46 @@ async function enrichWithInsights(
   result: ResearchResult,
   options: ResearchOptions,
 ): Promise<ResearchResult> {
-  const apiKey = options.openaiApiKey?.trim();
-  if (!apiKey) {
-    result.insightsError =
-      'No OpenAI API key configured. Provide an API key to enable AI insights.';
+  const apiKey = options.openaiApiKey?.trim() || '';
+
+  const tryServer = async (): Promise<IntelligenceResult> => {
+    const res = await fetch('/api/insights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: result.type,
+        assetClass: result.assetClass,
+        data: result.data,
+        apiKey: apiKey || undefined,
+      }),
+    });
+
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      const msg = typeof json.error === 'string' ? json.error : `Insights request failed (HTTP ${res.status})`;
+      throw new Error(msg);
+    }
+    const intelligence = json.intelligence as IntelligenceResult | undefined;
+    if (!intelligence) throw new Error('Insights response missing intelligence payload');
+    return intelligence;
+  };
+
+  // Prefer server-side generation when available (Vercel env vars stay server-side).
+  try {
+    result.intelligence = await tryServer();
+    result.insights = result.intelligence.insights;
     return result;
+  } catch (serverErr) {
+    // Ignore and fall back to client-side only if we have a key (static exports won't have /api/*).
+    if (!apiKey) {
+      result.insightsError =
+        serverErr instanceof Error
+          ? serverErr.message
+          : 'No AI key configured. Provide an API key to enable AI insights.';
+      return result;
+    }
   }
+
   try {
     try {
       result.intelligence = await generateIntelligence({
@@ -251,7 +285,6 @@ async function enrichWithInsights(
       });
       result.insights = result.intelligence.insights;
     } catch (agentErr) {
-      // Fallback to the legacy prompt if the more strict intelligence layer fails.
       result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
       result.insightsError =
         agentErr instanceof Error
@@ -261,6 +294,7 @@ async function enrichWithInsights(
   } catch (err) {
     result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
   }
+
   return result;
 }
 
