@@ -27,7 +27,7 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: "250mb" }));
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
 const PORT = Number(process.env.PORT || 3001);
@@ -44,7 +44,7 @@ const stockLensLimiter = rateLimit({
 });
 const yahooProxyLimiter = rateLimit({
   windowMs: RATE_LIMIT_WINDOW_MS,
-  limit: RATE_LIMIT_MAX_REQUESTS * 6,
+  limit: RATE_LIMIT_MAX_REQUESTS * 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many market-data requests. Please retry shortly." },
