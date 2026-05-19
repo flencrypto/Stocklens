@@ -13,6 +13,7 @@ import {
   CryptoSearchResult,
 } from '@/lib/cryptoData';
 import { generateInsights, AssetInsights } from '@/lib/insights';
+import { generateIntelligence, IntelligenceResult } from '@/lib/intelligence';
 
 export type SearchMode = 'stock' | 'crypto';
 
@@ -22,6 +23,7 @@ export interface ResearchResult {
   assetClass: string;
   insights?: AssetInsights;
   insightsError?: string;
+  intelligence?: IntelligenceResult;
 }
 
 export interface ResearchOptions {
@@ -233,17 +235,67 @@ async function enrichWithInsights(
   result: ResearchResult,
   options: ResearchOptions,
 ): Promise<ResearchResult> {
-  const apiKey = options.openaiApiKey?.trim();
-  if (!apiKey) {
-    result.insightsError =
-      'No OpenAI API key configured. Provide an API key to enable AI insights.';
-    return result;
-  }
+  const apiKey = options.openaiApiKey?.trim() || '';
+
+  const tryServer = async (): Promise<IntelligenceResult> => {
+    const res = await fetch('/api/insights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: result.type,
+        assetClass: result.assetClass,
+        data: result.data,
+        apiKey: apiKey || undefined,
+      }),
+    });
+
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      const msg = typeof json.error === 'string' ? json.error : `Insights request failed (HTTP ${res.status})`;
+      throw new Error(msg);
+    }
+    const intelligence = json.intelligence as IntelligenceResult | undefined;
+    if (!intelligence) throw new Error('Insights response missing intelligence payload');
+    return intelligence;
+  };
+
+  // Prefer server-side generation when available (Vercel env vars stay server-side).
   try {
-    result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
+    result.intelligence = await tryServer();
+    result.insights = result.intelligence.insights;
+    return result;
+  } catch (serverErr) {
+    // If the route is unavailable (static export / 404) and no client key, show a friendly message.
+    if (!apiKey) {
+      const msg = serverErr instanceof Error ? serverErr.message : '';
+      const isRouteUnavailable = msg.includes('HTTP 404') || msg.includes('HTTP 405') || msg.includes('HTTP 0');
+      result.insightsError = isRouteUnavailable
+        ? 'No API key configured. Provide an API key to enable AI insights.'
+        : msg || 'No API key configured. Provide an API key to enable AI insights.';
+      return result;
+    }
+  }
+
+  try {
+    try {
+      result.intelligence = await generateIntelligence({
+        apiKey,
+        type: result.type,
+        data: result.data,
+        assetClass: result.assetClass,
+      });
+      result.insights = result.intelligence.insights;
+    } catch (agentErr) {
+      result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
+      result.insightsError =
+        agentErr instanceof Error
+          ? `Trust Engine fallback: ${agentErr.message}`
+          : 'Trust Engine fallback: failed to generate auditable brief';
+    }
   } catch (err) {
     result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
   }
+
   return result;
 }
 

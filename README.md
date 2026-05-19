@@ -58,31 +58,30 @@ for stock lookups and falls back to public relays only if the backend is unavail
 
 This tool is for educational and informational purposes only. It does not constitute financial advice. Always conduct your own due diligence before investing.
 
-## OpenAI API key (AI insights)
+## AI API keys (OpenAI / xAI)
 
-Stocklens can use the OpenAI API to generate the **Investment Thesis**,
+Stocklens can use an LLM provider to generate the **Investment Thesis**,
 **Bull / Bear Case** and **Key Catalysts** sections of the two-pager. When no
 key is provided the app falls back to its built-in heuristic generators, so AI
 is fully optional.
 
-You can supply a key in two ways:
+Recommended (Vercel / server): set one of these env vars so the browser never sees the key:
 
-1. **At runtime** — click *"Add OpenAI API key for AI-generated insights"*
+- OpenAI: `OPENAI_API_KEY` (preferred) or `OPENAI_KEY`
+- xAI: `XAI_API_KEY`
+
+The app will call `/api/insights` which reads the env vars server-side.
+
+You can also supply a key at runtime:
+
+1. **At runtime** — click *"Optional: add API key for AI insights"*
    under the search bar and paste your key. It is stored only in your
-   browser's `localStorage` and sent directly from your browser to
-   `api.openai.com`.
-2. **At build/deploy time** — set the `OPENAI_KEY` env var (this is the
-   variable name configured in the Vercel project settings as a Sensitive
-   variable for Production and Preview; `NEXT_PUBLIC_OPENAI_API_KEY` is also
-   accepted as a fallback) before running `npm run build` / `npm run dev`.
-   ⚠️ Because Stocklens is a client-rendered app, any value placed in this
-   variable is bundled into the JavaScript shipped to the browser. Only use
-   this option for personal deployments where exposing the key is
-   acceptable; for shared deployments, prefer the runtime input.
+   browser's `localStorage`. When `/api/insights` is available it will be sent
+   to the server route; on static-only deployments it may be sent directly to
+   the provider API from the browser.
 
-The default model is `gpt-4o-mini`. Insight generation failures are
-non-fatal — the UI will surface a small notice and continue to render the
-heuristic insights.
+Defaults: OpenAI uses `gpt-4o-mini`; xAI uses `grok-2-mini` (override by sending
+`model` to `/api/insights`).
 
 ## Stock-LENS one-page backend (local)
 
