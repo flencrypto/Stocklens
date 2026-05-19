@@ -163,11 +163,16 @@ async function generateInsightsViaApiRoute(
   assetClass: string,
   options?: { model?: string; signal?: AbortSignal },
 ): Promise<AssetInsights> {
+  const resolvedKey = apiKey?.trim();
+  if (!resolvedKey) {
+    throw new Error('OpenAI API key is required for browser-generated AI insights.');
+  }
+
   const res = await fetch('/api/insights', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      apiKey: apiKey?.trim() || '',
+      apiKey: resolvedKey,
       type,
       data,
       assetClass,
