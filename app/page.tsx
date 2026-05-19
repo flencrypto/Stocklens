@@ -36,6 +36,7 @@ export default function Home() {
   const resultsRef = useRef<HTMLDivElement>(null);
   const autoRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoRetryAttemptRef = useRef(0);
+  const MAX_AUTO_RETRIES = 4;
 
   // Load any previously saved key on mount. Falls back to a build-time env
   // var so the app can be configured at deploy time too. We prefer
@@ -142,10 +143,17 @@ export default function Home() {
       return;
     }
 
-    const attempt = Math.min(autoRetryAttemptRef.current, 4);
+    if (autoRetryAttemptRef.current >= MAX_AUTO_RETRIES) {
+      setAutoRetryMessage('Auto-retry paused. Click Retry to try again.');
+      return;
+    }
+
+    const attempt = autoRetryAttemptRef.current;
     const delayMs = Math.min(3000 * Math.pow(2, attempt), 15000);
     autoRetryAttemptRef.current = attempt + 1;
-    setAutoRetryMessage(`Auto-retrying in ${Math.round(delayMs / 1000)}s...`);
+    setAutoRetryMessage(
+      `Auto-retrying (${attempt + 1}/${MAX_AUTO_RETRIES}) in ${Math.round(delayMs / 1000)}s...`,
+    );
 
     autoRetryTimeoutRef.current = setTimeout(() => {
       setAutoRetryMessage(null);

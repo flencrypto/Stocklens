@@ -289,6 +289,7 @@ async function fetchYahooJson(
   let lastStatus: number | undefined;
   let lastError: unknown;
   const errors: string[] = [];
+  let public404Count = 0;
 
   const targets = buildTargets(yahooUrl, backendPath);
 
@@ -305,6 +306,24 @@ async function fetchYahooJson(
           const errorMsg = `HTTP ${res.status}`;
           if (attempt === 0) {
             errors.push(`${target.label}: ${errorMsg}`);
+          }
+          // 404 from the first-party backend is authoritative (real not-found).
+          // Public proxies occasionally fabricate 404s, so we only treat 404 as
+          // definitive once we've observed it from multiple independent proxies.
+          if (res.status === 404) {
+            const err404 = new Error(`HTTP 404`) as Error & { status: number };
+            err404.status = 404;
+
+            if (!target.isPublicProxy) {
+              throw err404;
+            }
+
+            public404Count++;
+            if (public404Count >= 2) {
+              throw err404;
+            }
+
+            break; // Try next target quickly before deciding it's a real 404
           }
           // For 5xx errors or 429 (rate limit), retry with backoff
           if (
