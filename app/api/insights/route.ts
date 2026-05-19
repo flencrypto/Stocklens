@@ -26,6 +26,7 @@ const MAX_ASSET_CLASS_LENGTH = 120;
 const STOCK_ALLOWED_KEYS = new Set<string>([
   'ticker',
   'name',
+  'quoteType',
   'sector',
   'industry',
   'exchange',
