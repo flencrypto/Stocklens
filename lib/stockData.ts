@@ -54,6 +54,9 @@ const YF_BASE = 'https://query1.finance.yahoo.com';
 // public CORS relays as a last resort.
 type ProxyBuilder = (yahooUrl: string) => string;
 const CORS_PROXIES: ProxyBuilder[] = [
+  // Jina AI "reader" proxy. Returns plaintext that includes "Markdown Content:"
+  // followed by the upstream body (JSON for Yahoo endpoints we use).
+  (u) => `https://r.jina.ai/http://${u.replace(/^https?:\/\//, '')}`,
   (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`,
   (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}`,
@@ -61,11 +64,108 @@ const CORS_PROXIES: ProxyBuilder[] = [
 
 let preferredProxyIndex = 0;
 let hasWarnedInvalidApiBase = false;
+const proxyCooldownUntil = new Map<number, number>();
+
+function nowMs(): number {
+  return Date.now();
+}
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function parseJsonFromPossiblyWrappedText(text: string): unknown {
+  const trimmed = text.trim();
+
+  // Most proxies either return raw JSON or `text/plain` with JSON.
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // continue
+  }
+
+  // `r.jina.ai` reader format: "... Markdown Content: <json>"
+  const marker = 'Markdown Content:';
+  const markerIndex = trimmed.indexOf(marker);
+  if (markerIndex !== -1) {
+    const candidate = trimmed.slice(markerIndex + marker.length).trim();
+    const extracted = extractFirstJsonValue(candidate);
+    if (extracted) {
+      try {
+        return JSON.parse(extracted);
+      } catch {
+        // continue
+      }
+    }
+  }
+
+  // Best-effort: try to parse the first JSON object/array found in the body.
+  const extracted = extractFirstJsonValue(trimmed);
+  if (extracted) {
+    try {
+      return JSON.parse(extracted);
+    } catch {
+      // continue
+    }
+  }
+
+  const err = new Error('Upstream proxy returned a non-JSON response') as Error & { code?: string };
+  err.code = 'invalid_json';
+  throw err;
+}
+
+function extractFirstJsonValue(text: string): string | null {
+  const firstObject = text.indexOf('{');
+  const firstArray = text.indexOf('[');
+  const start =
+    firstObject === -1
+      ? firstArray
+      : firstArray === -1
+        ? firstObject
+        : Math.min(firstObject, firstArray);
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') depth++;
+    if (ch === '}' || ch === ']') depth--;
+    if (depth === 0 && i >= start) {
+      return text.slice(start, i + 1);
+    }
+  }
+
+  return null;
+}
+
+function isInvalidJsonError(err: unknown): boolean {
+  if (err instanceof SyntaxError) return true;
+  return (err as { code?: unknown } | null)?.code === 'invalid_json';
+}
 
 function hasAbortSignalTimeout(): boolean {
   return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function';
@@ -166,7 +266,10 @@ function buildTargets(
   for (let i = 0; i < CORS_PROXIES.length; i++) {
     order.push((preferredProxyIndex + i) % CORS_PROXIES.length);
   }
-  for (const idx of order) {
+  const activeOrder = order.filter((idx) => (proxyCooldownUntil.get(idx) ?? 0) <= nowMs());
+  const finalOrder = activeOrder.length > 0 ? activeOrder : order;
+
+  for (const idx of finalOrder) {
     targets.push({
       label: `proxy(${idx})`,
       url: CORS_PROXIES[idx](yahooUrl),
@@ -186,6 +289,7 @@ async function fetchYahooJson(
   let lastStatus: number | undefined;
   let lastError: unknown;
   const errors: string[] = [];
+  let public404Count = 0;
 
   const targets = buildTargets(yahooUrl, backendPath);
 
@@ -203,13 +307,23 @@ async function fetchYahooJson(
           if (attempt === 0) {
             errors.push(`${target.label}: ${errorMsg}`);
           }
-          // 404 from the upstream is a real "not found" signal we want to
-          // surface immediately rather than retrying through other proxies,
-          // because every proxy will return the same 404.
+          // 404 from the first-party backend is authoritative (real not-found).
+          // Public proxies occasionally fabricate 404s, so we only treat 404 as
+          // definitive once we've observed it from multiple independent proxies.
           if (res.status === 404) {
-            const err = new Error(`HTTP 404`) as Error & { status: number };
-            err.status = 404;
-            throw err;
+            const err404 = new Error(`HTTP 404`) as Error & { status: number };
+            err404.status = 404;
+
+            if (!target.isPublicProxy) {
+              throw err404;
+            }
+
+            public404Count++;
+            if (public404Count >= 2) {
+              throw err404;
+            }
+
+            break; // Try next target quickly before deciding it's a real 404
           }
           // For 5xx errors or 429 (rate limit), retry with backoff
           if (
@@ -218,6 +332,9 @@ async function fetchYahooJson(
             res.status === 522 ||
             res.status === 524
           ) {
+            if (target.isPublicProxy && target.proxyIndex != null) {
+              proxyCooldownUntil.set(target.proxyIndex, nowMs() + 15_000);
+            }
             if (attempt < targetRetries) {
               await sleep(Math.min(1000 * Math.pow(2, attempt), 3000));
               continue;
@@ -225,21 +342,24 @@ async function fetchYahooJson(
           }
           break; // Non-retryable error, try next target
         }
-        const data = await res.json();
+        const text = await res.text();
+        const data = parseJsonFromPossiblyWrappedText(text);
         if (target.isPublicProxy && target.proxyIndex != null) {
           preferredProxyIndex = target.proxyIndex;
+          proxyCooldownUntil.delete(target.proxyIndex);
         }
         return data;
       } catch (err) {
-        // If we already classified this as an upstream 404, propagate it.
-        if ((err as { status?: number } | null)?.status === 404) throw err;
         lastError = err;
         const errorMsg = err instanceof Error ? err.message : String(err);
         if (attempt === 0) {
           errors.push(`${target.label}: ${errorMsg}`);
         }
         // Retry on network errors (timeouts, connection refused, etc.)
-        if (attempt < targetRetries && isTimeoutOrAbortError(err)) {
+        if (
+          attempt < targetRetries &&
+          (isTimeoutOrAbortError(err) || (target.isPublicProxy && isInvalidJsonError(err)))
+        ) {
           await sleep(Math.min(1000 * Math.pow(2, attempt), 3000));
           continue;
         }
@@ -267,6 +387,17 @@ export interface StockSearchResult {
   type: string;
 }
 
+const SEARCH_STOCKS_CACHE_TTL_MS = 30_000;
+const searchStocksCache = new Map<
+  string,
+  { expiresAt: number; results: StockSearchResult[] }
+>();
+
+function looksLikeTicker(value: string): boolean {
+  if (value.length > 16) return false;
+  return /^\^?[A-Za-z0-9]{1,10}([.-][A-Za-z0-9]{1,6})?$/.test(value);
+}
+
 /**
  * Search Yahoo Finance for stocks/equities/funds matching the query. Returns
  * up to `limit` candidates including newly listed / IPO equities. Throws on
@@ -279,6 +410,12 @@ export async function searchStocks(
   const trimmed = query.trim();
   if (!trimmed) return [];
 
+  const cacheKey = `${trimmed.toUpperCase()}|${limit}`;
+  const cached = searchStocksCache.get(cacheKey);
+  if (cached && cached.expiresAt > nowMs()) {
+    return cached.results;
+  }
+
   const yahooUrl =
     `${YF_BASE}/v1/finance/search?q=${encodeURIComponent(trimmed)}` +
     `&quotesCount=${limit}&newsCount=0&listsCount=0`;
@@ -290,6 +427,16 @@ export async function searchStocks(
   try {
     json = (await fetchYahooJson(yahooUrl, backendPath)) as Record<string, unknown>;
   } catch {
+    if (cached && cached.expiresAt > nowMs()) {
+      return cached.results;
+    }
+    // If the upstream search is temporarily unavailable but the user entered
+    // something ticker-like, return a best-effort direct candidate so the
+    // subsequent chart lookup can still proceed.
+    if (looksLikeTicker(trimmed)) {
+      const symbol = trimmed.toUpperCase();
+      return [{ symbol, name: symbol, exchange: '', type: 'Symbol' }];
+    }
     throw new Error(
       'Live stock search is temporarily unavailable. Please retry in a few seconds, or run `npm run stocklens:server` for the local Stocklens backend and a more reliable stock feed.',
     );
@@ -327,6 +474,12 @@ export async function searchStocks(
 
     results.push({ symbol, name: String(name), exchange, type });
   }
+
+  searchStocksCache.set(cacheKey, {
+    expiresAt: nowMs() + SEARCH_STOCKS_CACHE_TTL_MS,
+    results,
+  });
+  if (searchStocksCache.size > 200) searchStocksCache.clear();
 
   return results;
 }
