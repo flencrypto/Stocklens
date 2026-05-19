@@ -22,7 +22,7 @@ const EXAMPLE_TICKERS: Array<{ label: string; desc: string; mode: SearchMode }> 
 
 const OPENAI_KEY_STORAGE = 'stocklens.openaiApiKey';
 
-type ErrorKind = 'transient' | 'not_found' | 'other';
+type ErrorKind = 'transient' | 'not_found' | 'invalid' | 'other';
 type ErrorInfo = { message: string; kind: ErrorKind };
 
 export default function Home() {
@@ -48,7 +48,8 @@ export default function Home() {
     if (currentMode === 'stock') {
       const kind = getStockDataErrorKind(err);
       if (kind === 'transient') return { message, kind: 'transient' };
-      if (kind === 'not_found' || kind === 'invalid') return { message, kind: 'not_found' };
+      if (kind === 'not_found') return { message, kind: 'not_found' };
+      if (kind === 'invalid') return { message, kind: 'invalid' };
     }
 
     if (
@@ -156,11 +157,7 @@ export default function Home() {
       return;
     }
 
-    const retryable =
-      /temporarily unavailable/i.test(error) ||
-      /rate-?limit/i.test(error) ||
-      /\bHTTP 429\b/i.test(error) ||
-      /providers failed/i.test(error);
+    const retryable = error.kind === 'transient';
 
     if (!retryable) {
       autoRetryAttemptRef.current = 0;
