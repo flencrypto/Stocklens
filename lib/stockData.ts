@@ -48,6 +48,29 @@ export interface StockData {
 
 const YF_BASE = 'https://query1.finance.yahoo.com';
 
+export type StockDataErrorKind = 'not_found' | 'transient' | 'invalid';
+
+export class StockDataError extends Error {
+  kind: StockDataErrorKind;
+  status?: number;
+
+  constructor(kind: StockDataErrorKind, message: string, options: { status?: number } = {}) {
+    super(message);
+    this.name = 'StockDataError';
+    this.kind = kind;
+    if (typeof options.status === 'number') {
+      this.status = options.status;
+    }
+  }
+}
+
+export function getStockDataErrorKind(err: unknown): StockDataErrorKind | null {
+  if (err instanceof StockDataError) return err.kind;
+  const kind = (err as { kind?: unknown } | null)?.kind;
+  if (kind === 'not_found' || kind === 'transient' || kind === 'invalid') return kind;
+  return null;
+}
+
 // Yahoo Finance APIs do not send CORS headers in browsers. We first try an
 // optional first-party proxy endpoint (`/api/yahoo`) when available (local
 // stocklens backend or configured hosted backend), and only then fall back to
@@ -290,8 +313,9 @@ export async function searchStocks(
   try {
     json = (await fetchYahooJson(yahooUrl, backendPath)) as Record<string, unknown>;
   } catch {
-    throw new Error(
-      'Live stock search is temporarily unavailable. Please retry in a few seconds, or run `npm run stocklens:server` for the local Stocklens backend and a more reliable stock feed.',
+    throw new StockDataError(
+      'transient',
+      'Live stock search is temporarily unavailable.',
     );
   }
   const quotes: Array<Record<string, unknown>> =
@@ -376,10 +400,13 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
     json = (await fetchYahooJson(yahooUrl, backendPath)) as YahooChartResponse;
   } catch (err) {
     const status = (err as { status?: number } | null)?.status;
-    throw new Error(
-      status === 404
-        ? `No results found for ticker: ${upperTicker}`
-        : `Live stock quote for ${upperTicker} is temporarily unavailable. Please retry in a few seconds.`,
+    if (status === 404) {
+      throw new StockDataError('not_found', `No results found for ticker: ${upperTicker}`, { status });
+    }
+    throw new StockDataError(
+      'transient',
+      `Live stock quote for ${upperTicker} is temporarily unavailable.`,
+      { status },
     );
   }
 
@@ -387,16 +414,18 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
   if (yfError) {
     const desc: string = yfError.description || '';
     const lower = desc.toLowerCase();
-    throw new Error(
-      lower.includes('no results') || lower.includes('not found')
-        ? `No results found for ticker: ${upperTicker}`
-        : desc || `Invalid ticker: ${upperTicker}`,
-    );
+    if (lower.includes('no results') || lower.includes('not found') || lower.includes('no data found')) {
+      throw new StockDataError('not_found', `No results found for ticker: ${upperTicker}`);
+    }
+    if (desc) {
+      throw new StockDataError('invalid', desc);
+    }
+    throw new StockDataError('invalid', `Invalid ticker: ${upperTicker}`);
   }
 
   const meta = json?.chart?.result?.[0]?.meta;
   if (!meta) {
-    throw new Error(`No results found for ticker: ${upperTicker}`);
+    throw new StockDataError('not_found', `No results found for ticker: ${upperTicker}`);
   }
 
   const safeNum = (v: unknown): number | null => {
