@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import InfographicPage1 from '@/components/InfographicPage1';
 import InfographicPage2 from '@/components/InfographicPage2';
-import { StockData } from '@/lib/stockData';
+import { StockData, getStockDataErrorKind } from '@/lib/stockData';
 import { CryptoData } from '@/lib/cryptoData';
 import {
   researchByCandidate,
@@ -22,13 +22,16 @@ const EXAMPLE_TICKERS: Array<{ label: string; desc: string; mode: SearchMode }> 
 
 const OPENAI_KEY_STORAGE = 'stocklens.openaiApiKey';
 
+type ErrorKind = 'transient' | 'not_found' | 'invalid' | 'other';
+type ErrorInfo = { message: string; kind: ErrorKind };
+
 export default function Home() {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<SearchMode>('stock');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [candidates, setCandidates] = useState<SearchCandidate[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorInfo | null>(null);
   const [lastAttempt, setLastAttempt] = useState<{ query: string; mode: SearchMode } | null>(null);
   const [autoRetryMessage, setAutoRetryMessage] = useState<string | null>(null);
   const [openaiKey, setOpenaiKey] = useState('');
@@ -37,6 +40,28 @@ export default function Home() {
   const autoRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoRetryAttemptRef = useRef(0);
   const MAX_AUTO_RETRIES = 4;
+
+  const toErrorInfo = (err: unknown, currentMode: SearchMode): ErrorInfo => {
+    const message =
+      err instanceof Error ? err.message : 'Failed to fetch data. Please try again.';
+
+    if (currentMode === 'stock') {
+      const kind = getStockDataErrorKind(err);
+      if (kind === 'transient') return { message, kind: 'transient' };
+      if (kind === 'not_found') return { message, kind: 'not_found' };
+      if (kind === 'invalid') return { message, kind: 'invalid' };
+    }
+
+    if (
+      message.startsWith('No stocks found for:') ||
+      message.startsWith('No crypto found for:') ||
+      message.startsWith('No results found for ticker:')
+    ) {
+      return { message, kind: 'not_found' };
+    }
+
+    return { message, kind: 'other' };
+  };
 
   // Load any previously saved key on mount. Falls back to a build-time env
   // var so the app can be configured at deploy time too. We prefer
@@ -82,7 +107,8 @@ export default function Home() {
         resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch data. Please try again.');
+      const currentMode: SearchMode = candidate.type === 'stock' ? 'stock' : 'crypto';
+      setError(toErrorInfo(err, currentMode));
     } finally {
       setLoading(false);
     }
@@ -113,7 +139,7 @@ export default function Home() {
       // Multiple matches — let the user disambiguate.
       setCandidates(matches);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch data. Please try again.');
+      setError(toErrorInfo(err, searchMode));
     } finally {
       setLoading(false);
     }
@@ -131,11 +157,7 @@ export default function Home() {
       return;
     }
 
-    const retryable =
-      /temporarily unavailable/i.test(error) ||
-      /rate-?limit/i.test(error) ||
-      /\bHTTP 429\b/i.test(error) ||
-      /providers failed/i.test(error);
+    const retryable = error.kind === 'transient';
 
     if (!retryable) {
       autoRetryAttemptRef.current = 0;
@@ -387,8 +409,8 @@ export default function Home() {
             className="max-w-xl mx-auto mt-6 rounded-xl p-4 text-sm"
             style={{ background: '#1a0a0a', border: '1px solid #991b1b', color: '#fca5a5' }}
           >
-            <strong>Error:</strong> {error}
-            {lastAttempt && (
+            <strong>Error:</strong> {error.message}
+            {lastAttempt && error.kind === 'transient' && (
               <button
                 type="button"
                 onClick={() => handleSearch(lastAttempt.query, lastAttempt.mode)}
@@ -398,9 +420,9 @@ export default function Home() {
                 Retry
               </button>
             )}
-            {mode === 'stock' && (
+            {mode === 'stock' && error.kind === 'transient' && (
               <p className="mt-2 text-xs text-rose-300/90">
-                Stock data can be rate-limited upstream. Retry shortly, or run the local Stocklens backend (`npm run stocklens:server`) for a steadier feed.
+                Stock data can be rate-limited upstream. Wait a few seconds, then retry — or run the local Stocklens backend (`npm run stocklens:server`) for a steadier feed.
               </p>
             )}
             {autoRetryMessage && (
