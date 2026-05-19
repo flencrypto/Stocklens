@@ -13,6 +13,7 @@ import {
   CryptoSearchResult,
 } from '@/lib/cryptoData';
 import { generateInsights, AssetInsights } from '@/lib/insights';
+import { generateIntelligence, IntelligenceResult } from '@/lib/intelligence';
 
 export type SearchMode = 'stock' | 'crypto';
 
@@ -22,6 +23,7 @@ export interface ResearchResult {
   assetClass: string;
   insights?: AssetInsights;
   insightsError?: string;
+  intelligence?: IntelligenceResult;
 }
 
 export interface ResearchOptions {
@@ -240,7 +242,22 @@ async function enrichWithInsights(
     return result;
   }
   try {
-    result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
+    try {
+      result.intelligence = await generateIntelligence({
+        apiKey,
+        type: result.type,
+        data: result.data,
+        assetClass: result.assetClass,
+      });
+      result.insights = result.intelligence.insights;
+    } catch (agentErr) {
+      // Fallback to the legacy prompt if the more strict intelligence layer fails.
+      result.insights = await generateInsights(apiKey, result.type, result.data, result.assetClass);
+      result.insightsError =
+        agentErr instanceof Error
+          ? `Trust Engine fallback: ${agentErr.message}`
+          : 'Trust Engine fallback: failed to generate auditable brief';
+    }
   } catch (err) {
     result.insightsError = err instanceof Error ? err.message : 'Failed to generate AI insights';
   }

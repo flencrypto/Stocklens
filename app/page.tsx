@@ -446,6 +446,11 @@ export default function Home() {
                 {result.insights && (
                   <span className="ml-2 text-purple-400">· 🤖 AI insights via OpenAI</span>
                 )}
+                {result.intelligence && (
+                  <span className="ml-2 text-emerald-400">
+                    · ✅ Trust Engine {result.intelligence.trust.citationCoveragePct}% cited
+                  </span>
+                )}
                 {result.insightsError && (
                   <span className="ml-2 inline-flex items-center gap-2 text-amber-400" title={result.insightsError}>
                     <span>· AI insights unavailable</span>
@@ -481,6 +486,59 @@ export default function Home() {
           <p className="max-w-4xl mx-auto px-4 -mt-4 mb-5 text-[11px] text-slate-500 no-print">
             Tip: use your browser&apos;s Print dialog and choose <kbd className="font-semibold">Save as PDF</kbd> for sharing.
           </p>
+
+          {result.intelligence && (
+            <details
+              className="max-w-4xl mx-auto px-4 mb-6 rounded-xl no-print"
+              style={{ background: '#0D1422', border: '1px solid #1E2D47' }}
+            >
+              <summary className="cursor-pointer select-none px-4 py-3 text-xs text-slate-300">
+                Trust Engine · {result.intelligence.trust.citationCoveragePct}% citation coverage ·{' '}
+                {result.intelligence.sources.length} sources
+              </summary>
+              <div className="px-4 pb-4 text-[11px] text-slate-400">
+                {!result.intelligence.compliance.informationalOnly && (
+                  <div className="mb-3 text-amber-300">
+                    Compliance guard flagged: {result.intelligence.compliance.blockedTermsFound.join(', ') || 'content'}
+                  </div>
+                )}
+                {result.intelligence.trust.unknownCitationIds.length > 0 && (
+                  <div className="mb-3 text-amber-300">
+                    Unknown citation IDs: {result.intelligence.trust.unknownCitationIds.join(', ')}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {result.intelligence.sources.map((s) => (
+                    <div
+                      key={s.id}
+                      className="rounded-lg px-3 py-2"
+                      style={{ background: '#080C14', border: '1px solid #1E2D47' }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-[10px] text-cyan-300">{s.id}</span>
+                        <span className="text-[10px] text-slate-600 uppercase tracking-widest">{s.kind}</span>
+                      </div>
+                      <div className="mt-1 text-slate-300">{s.title}</div>
+                      {s.url && (
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-block text-[10px] text-blue-400 hover:text-blue-300 underline underline-offset-2"
+                        >
+                          {s.url}
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-[10px] text-slate-600">
+                  Note: Stocklens enforces that material claims are cited to the provided sources. For full primary-source
+                  workflows (filings/transcripts/news packs), connect a server-side retrieval layer.
+                </p>
+              </div>
+            </details>
+          )}
 
           {/* Infographic Pages */}
           <div className="flex flex-col lg:flex-row justify-center gap-6 px-4 items-start">
