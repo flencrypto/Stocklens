@@ -1,0 +1,4 @@
+interface:
+  display_name: "DCF & WACC Valuation Expert"
+  short_description: "Institutional DCF/WACC methodology and models"
+  default_prompt: "Use $dcf-wacc-valuation-expert to explain DCF valuation methodology and calculate WACC step-by-step."
