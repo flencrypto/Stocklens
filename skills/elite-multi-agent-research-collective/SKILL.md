@@ -1,85 +1,79 @@
 ---
 name: elite-multi-agent-research-collective
-description: [TODO: Complete and informative explanation of what the skill does and when to use it. Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]
+description: "Elite 12-agent research and delivery collective for institutional-grade analysis, algorithm-optimized social content, VC/entrepreneurial strategy, world-class design, market gap identification, competitor teardown, and patent repurposing. Trigger on: 'assemble the research team', 'full business analysis on company', 'create institutional stock report', 'design social campaign for product', 'spot market gaps and patent opportunities', 'competitor teardown', 'venture due diligence', 'repurpose expired patents for industry', 'build pitch deck and launch strategy'."
 ---
 
-# Elite Multi Agent Research Collective
+# Elite Multi-Agent Research Collective (12 Agents)
 
-## Overview
+Use this skill to run a coordinated multi-agent workflow for high-stakes, evidence-backed research and polished deliverables (IC memos, reports, teardown decks, social campaigns, market maps, and patent “second life” concept briefs).
 
-[TODO: 1-2 sentences explaining what this skill enables]
+If you need the full specification, open `references/collective_spec.md`.
 
-## Structuring This Skill
+## Quick Start (Orchestrator Prime)
 
-[TODO: Choose the structure that best fits this skill's purpose. Common patterns:
+1. Write a 3–6 line mission summary (what, for whom, timeframe, output format).
+2. Create a requirement register:
+   - HARD requirements (must ship)
+   - Preferences (nice-to-have)
+   - Prohibitions (must not do)
+3. Decompose into sprints and delegate in parallel (cap at 6 concurrent agents):
+   - Research Sprint → Analysis Sprint → Creation Sprint → Audit & Merge.
+4. Run the Completion Gate (PASS / PARTIAL / FAIL) before final delivery.
 
-**1. Workflow-Based** (best for sequential processes)
-- Works well when there are clear step-by-step procedures
-- Example: DOCX skill with "Workflow Decision Tree" -> "Reading" -> "Creating" -> "Editing"
-- Structure: ## Overview -> ## Workflow Decision Tree -> ## Step 1 -> ## Step 2...
+## Delegation Pattern
 
-**2. Task-Based** (best for tool collections)
-- Works well when the skill offers different operations/capabilities
-- Example: PDF skill with "Quick Start" -> "Merge PDFs" -> "Split PDFs" -> "Extract Text"
-- Structure: ## Overview -> ## Quick Start -> ## Task Category 1 -> ## Task Category 2...
+When using subagents, give each agent:
+- A scoped mandate (what to deliver, what to ignore)
+- The exact output template to return
+- An evidence bar (e.g., “≥2 independent sources for major factual claims”)
+- A token budget (keep it tight; compress evidence packs)
 
-**3. Reference/Guidelines** (best for standards or specifications)
-- Works well for brand guidelines, coding standards, or requirements
-- Example: Brand styling with "Brand Guidelines" -> "Colors" -> "Typography" -> "Features"
-- Structure: ## Overview -> ## Guidelines -> ## Specifications -> ## Usage...
+Suggested parallel split (edit to fit):
+- Agent 2: Deep research / sources & contradictions
+- Agent 3: Market sizing & trend timeline
+- Agent 4: Competitor teardown / kill sheet
+- Agent 5: Patent / IP “second life” concepts (flag risks)
+- Agent 6–11: Analysis + creation deliverables
+- Agent 12: Red-team audit (bias, hallucination risk, missing evidence)
 
-**4. Capabilities-Based** (best for integrated systems)
-- Works well when the skill provides multiple interrelated features
-- Example: Product Management with "Core Capabilities" -> numbered capability list
-- Structure: ## Overview -> ## Core Capabilities -> ### 1. Feature -> ### 2. Feature...
+## Output Templates
 
-Patterns can be mixed and matched as needed. Most skills combine patterns (e.g., start with task-based, add workflow for complex operations).
+### Evidence Pack (Research Agents)
 
-Delete this entire "Structuring This Skill" section when done - it's just guidance.]
+- Key findings (bullets)
+- Claims table: claim → confidence (high/med/low) → sources
+- Notable conflicts/uncertainties
+- “What would change my mind” (1–3 bullets)
 
-## [TODO: Replace with the first main section based on chosen structure]
+### IC Memo / Due Diligence (VC / Business)
 
-[TODO: Add content here. See examples in existing skills:
-- Code samples for technical skills
-- Decision trees for complex workflows
-- Concrete examples with realistic user requests
-- References to scripts/templates/references as needed]
+- Executive summary (thesis + recommendation)
+- Market (TAM/SAM/SOM, trends, timing)
+- Product + moat + risks
+- Competition (why win/lose)
+- Go-to-market (channel, pricing, wedge)
+- Metrics + model assumptions (clearly labeled)
+- Open questions + next diligence steps
 
-## Resources (optional)
+### Social Campaign (Platform-Native)
 
-Create only the resource directories this skill actually needs. Delete this section if no resources are required.
+- Objective per post (reach/engagement/conversion/authority)
+- Hooks, CTAs, timing, A/B variants
+- Asset list (what to design) and success metrics
 
-### scripts/
-Executable code (Python/Bash/etc.) that can be run directly to perform specific operations.
+### Patent Repurposing (Second Life)
 
-**Examples from other skills:**
-- PDF skill: `fill_fillable_fields.py`, `extract_form_field_info.py` - utilities for PDF manipulation
-- DOCX skill: `document.py`, `utilities.py` - Python modules for document processing
+- Candidate patent (or family) + status assumptions
+- New application concept + why it’s viable
+- Freedom-to-operate caveats (always flag)
+- Commercial viability score + next steps
 
-**Appropriate for:** Python scripts, shell scripts, or any executable code that performs automation, data processing, or specific operations.
+## Completion Gate (Orchestrator + Audit)
 
-**Note:** Scripts may be executed without loading into context, but can still be read by Codex for patching or environment adjustments.
+PASS only if:
+- Every HARD requirement is satisfied.
+- Major factual claims are sourced or explicitly flagged as uncertain.
+- Output matches requested format exactly.
+- Risks/limitations are stated where appropriate.
 
-### references/
-Documentation and reference material intended to be loaded into context to inform Codex's process and thinking.
-
-**Examples from other skills:**
-- Product management: `communication.md`, `context_building.md` - detailed workflow guides
-- BigQuery: API reference documentation and query examples
-- Finance: Schema documentation, company policies
-
-**Appropriate for:** In-depth documentation, API references, database schemas, comprehensive guides, or any detailed information that Codex should reference while working.
-
-### assets/
-Files not intended to be loaded into context, but rather used within the output Codex produces.
-
-**Examples from other skills:**
-- Brand styling: PowerPoint template files (.pptx), logo files
-- Frontend builder: HTML/React boilerplate project directories
-- Typography: Font files (.ttf, .woff2)
-
-**Appropriate for:** Templates, boilerplate code, document templates, images, icons, fonts, or any files meant to be copied or used in the final output.
-
----
-
-**Not every skill requires all three types of resources.**
+If any of the above fails, deliver PARTIAL with a tight gap list and the minimum next actions to reach PASS.
