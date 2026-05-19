@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import InfographicPage1 from '@/components/InfographicPage1';
 import InfographicPage2 from '@/components/InfographicPage2';
 import { StockData } from '@/lib/stockData';
@@ -30,9 +30,12 @@ export default function Home() {
   const [candidates, setCandidates] = useState<SearchCandidate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastAttempt, setLastAttempt] = useState<{ query: string; mode: SearchMode } | null>(null);
+  const [autoRetryMessage, setAutoRetryMessage] = useState<string | null>(null);
   const [openaiKey, setOpenaiKey] = useState('');
   const [showKeyInput, setShowKeyInput] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const autoRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRetryAttemptRef = useRef(0);
 
   // Load any previously saved key on mount. Falls back to a build-time env
   // var so the app can be configured at deploy time too. We prefer
@@ -66,7 +69,7 @@ export default function Home() {
     }
   };
 
-  const fetchCandidate = async (candidate: SearchCandidate) => {
+  const fetchCandidate = useCallback(async (candidate: SearchCandidate) => {
     setLoading(true);
     setError(null);
     setResult(null);
@@ -82,9 +85,9 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [openaiKey]);
 
-  const handleSearch = async (q: string, searchMode: SearchMode) => {
+  const handleSearch = useCallback(async (q: string, searchMode: SearchMode) => {
     const trimmed = q.trim();
     if (!trimmed) return;
     setLoading(true);
@@ -113,7 +116,49 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchCandidate]);
+
+  useEffect(() => {
+    if (autoRetryTimeoutRef.current) {
+      clearTimeout(autoRetryTimeoutRef.current);
+      autoRetryTimeoutRef.current = null;
+    }
+
+    if (!error || loading || mode !== 'stock' || !lastAttempt || lastAttempt.mode !== 'stock') {
+      autoRetryAttemptRef.current = 0;
+      setAutoRetryMessage(null);
+      return;
+    }
+
+    const retryable =
+      /temporarily unavailable/i.test(error) ||
+      /rate-?limit/i.test(error) ||
+      /\bHTTP 429\b/i.test(error) ||
+      /providers failed/i.test(error);
+
+    if (!retryable) {
+      autoRetryAttemptRef.current = 0;
+      setAutoRetryMessage(null);
+      return;
+    }
+
+    const attempt = Math.min(autoRetryAttemptRef.current, 4);
+    const delayMs = Math.min(3000 * Math.pow(2, attempt), 15000);
+    autoRetryAttemptRef.current = attempt + 1;
+    setAutoRetryMessage(`Auto-retrying in ${Math.round(delayMs / 1000)}s...`);
+
+    autoRetryTimeoutRef.current = setTimeout(() => {
+      setAutoRetryMessage(null);
+      handleSearch(lastAttempt.query, lastAttempt.mode);
+    }, delayMs);
+
+    return () => {
+      if (autoRetryTimeoutRef.current) {
+        clearTimeout(autoRetryTimeoutRef.current);
+        autoRetryTimeoutRef.current = null;
+      }
+    };
+  }, [error, handleSearch, lastAttempt, loading, mode]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -349,6 +394,9 @@ export default function Home() {
               <p className="mt-2 text-xs text-rose-300/90">
                 Stock data can be rate-limited upstream. Retry shortly, or run the local Stocklens backend (`npm run stocklens:server`) for a steadier feed.
               </p>
+            )}
+            {autoRetryMessage && (
+              <p className="mt-2 text-xs text-rose-200/90">{autoRetryMessage}</p>
             )}
           </div>
         )}
