@@ -111,11 +111,12 @@ function pickString(v: unknown): string {
 
 function validateBriefShape(brief: Record<string, unknown>): WedgeBrief10Min {
   const thesis = pickString(brief.thesis);
-  const bullCase = coerceStringArray(brief.bullCase, 5);
-  const bearCase = coerceStringArray(brief.bearCase, 5);
-  const catalysts = coerceStringArray(brief.catalysts, 5);
+  // Accept at least 3 items (LLM may return fewer than 5); cap at 5 for consistent UI.
+  const bullCase = coerceStringArray(brief.bullCase).slice(0, 5);
+  const bearCase = coerceStringArray(brief.bearCase).slice(0, 5);
+  const catalysts = coerceStringArray(brief.catalysts).slice(0, 5);
 
-  if (!thesis || bullCase.length !== 5 || bearCase.length !== 5 || catalysts.length !== 5) {
+  if (!thesis || bullCase.length < 3 || bearCase.length < 3 || catalysts.length < 3) {
     throw new Error('Intelligence brief missing required thesis/bull/bear/catalysts shape');
   }
 
@@ -305,7 +306,7 @@ export async function generateIntelligence(params: {
   options?: { model?: string; signal?: AbortSignal; baseUrl?: string };
 }): Promise<IntelligenceResult> {
   if (!params.apiKey || !params.apiKey.trim()) {
-    throw new Error('OpenAI API key is required');
+    throw new Error('AI provider API key is required');
   }
 
   const provider: Provider = params.provider || 'openai';
@@ -345,7 +346,7 @@ export async function generateIntelligence(params: {
     try {
       parsed = JSON.parse(content) as Record<string, unknown>;
     } catch {
-      throw new Error('Failed to parse OpenAI response as JSON');
+      throw new Error('Failed to parse AI response as JSON');
     }
 
     const claims = validateClaims(parsed.claims);
@@ -367,12 +368,12 @@ export async function generateIntelligence(params: {
 
   // One retry with lower temperature if compliance/citations fail.
   const first = await attempt(0.35);
-  let trust = auditCitations({ sources, claims: first.claims });
+  let trust = auditCitations({ sources, claims: first.claims, brief: first.brief });
   let compliance = runComplianceGuard(stringifyForCompliance({ sources, claims: first.claims, brief: first.brief }));
 
   if (trust.unknownCitationIds.length > 0 || trust.unsupportedMaterialClaims.length > 0 || !compliance.informationalOnly) {
     const second = await attempt(0.2);
-    trust = auditCitations({ sources, claims: second.claims });
+    trust = auditCitations({ sources, claims: second.claims, brief: second.brief });
     compliance = runComplianceGuard(stringifyForCompliance({ sources, claims: second.claims, brief: second.brief }));
 
     if (trust.unknownCitationIds.length > 0) {
@@ -396,16 +397,6 @@ export async function generateIntelligence(params: {
       compliance,
       trust,
     };
-  }
-
-  if (trust.unknownCitationIds.length > 0) {
-    throw new Error(`Intelligence output cited unknown sources: ${trust.unknownCitationIds.join(', ')}`);
-  }
-  if (trust.unsupportedMaterialClaims.length > 0) {
-    throw new Error('Intelligence output included unsupported material claims');
-  }
-  if (!compliance.informationalOnly) {
-    throw new Error('Intelligence output failed compliance guard');
   }
 
   return {

@@ -32,7 +32,8 @@ function resolveProviderAndKey(params: {
     pickEnv('OPENAI_API_KEY', 'OPENAI_KEY', 'OPEN_AI_KEY', 'NEXT_PUBLIC_OPENAI_API_KEY');
   const xaiKey =
     params.apiKey?.trim() ||
-    pickEnv('XAI_API_KEY', 'XAI_KEY', 'X_AI_API_KEY');
+    // xai_API_KEY matches the mixed-case name as set in the Vercel dashboard; XAI_API_KEY is the canonical form.
+    pickEnv('XAI_API_KEY', 'xai_API_KEY', 'XAI_KEY', 'X_AI_API_KEY');
 
   if (forced === 'openai') {
     if (!openaiKey) throw new Error('Missing OpenAI API key (set OPENAI_API_KEY or OPENAI_KEY)');

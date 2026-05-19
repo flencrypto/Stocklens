@@ -265,12 +265,13 @@ async function enrichWithInsights(
     result.insights = result.intelligence.insights;
     return result;
   } catch (serverErr) {
-    // Ignore and fall back to client-side only if we have a key (static exports won't have /api/*).
+    // If the route is unavailable (static export / 404) and no client key, show a friendly message.
     if (!apiKey) {
-      result.insightsError =
-        serverErr instanceof Error
-          ? serverErr.message
-          : 'No AI key configured. Provide an API key to enable AI insights.';
+      const msg = serverErr instanceof Error ? serverErr.message : '';
+      const isRouteUnavailable = msg.includes('HTTP 404') || msg.includes('HTTP 405') || msg.includes('HTTP 0');
+      result.insightsError = isRouteUnavailable
+        ? 'No API key configured. Provide an API key to enable AI insights.'
+        : msg || 'No API key configured. Provide an API key to enable AI insights.';
       return result;
     }
   }

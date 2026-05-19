@@ -14,18 +14,19 @@ const INVESTMENT_ADVICE_TERMS = [
   'must buy',
   'must sell',
   'financial advice',
-  'not financial advice', // allowed as disclaimer, but we still flag for review in AI output
+  // 'not financial advice' is a compliance disclaimer — do NOT flag it
 ];
 
-const TACTICAL_CONFLICT_TERMS = [
-  'target coordinates',
-  'how to attack',
-  'weapon',
-  'explosive',
-  'kill',
-  'assassinate',
-  'sabotage',
-  'evade sanctions',
+// Terms matched with word-boundary regex to avoid false positives (e.g. "skill" ≠ "kill").
+const TACTICAL_CONFLICT_PATTERNS: RegExp[] = [
+  /target coordinates/i,
+  /how to attack/i,
+  /\bweapons?\b/i,
+  /\bexplosive\b/i,
+  /\bkill\b/i,
+  /\bassassinate\b/i,
+  /\bsabotage\b/i,
+  /evade sanctions/i,
 ];
 
 function scanTerms(text: string, terms: string[]): string[] {
@@ -33,9 +34,13 @@ function scanTerms(text: string, terms: string[]): string[] {
   return terms.filter((t) => lowered.includes(t));
 }
 
+function scanTacticalConflict(text: string): boolean {
+  return TACTICAL_CONFLICT_PATTERNS.some((re) => re.test(text));
+}
+
 export function runComplianceGuard(textBlob: string): ComplianceReport {
   const blockedTermsFound = scanTerms(textBlob, INVESTMENT_ADVICE_TERMS);
-  const tacticalConflictRiskFound = scanTerms(textBlob, TACTICAL_CONFLICT_TERMS).length > 0;
+  const tacticalConflictRiskFound = scanTacticalConflict(textBlob);
 
   return {
     informationalOnly: blockedTermsFound.length === 0 && !tacticalConflictRiskFound,
