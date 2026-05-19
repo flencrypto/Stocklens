@@ -43,6 +43,36 @@ export type SearchCandidate =
   | (BaseCandidate & { type: 'stock'; quoteType: string })
   | (BaseCandidate & { type: 'crypto'; id: string; marketCapRank: number | null });
 
+function sortByQueryRelevance<T extends { symbol: string; name: string }>(
+  items: T[],
+  queryUpper: string,
+  queryLower: string,
+  tiebreaker?: (a: T, b: T) => number,
+): T[] {
+  const ranked = items.map((item) => ({
+    item,
+    lowerName: item.name.toLowerCase(),
+  }));
+
+  ranked.sort((a, b) => {
+    const aExact = a.item.symbol === queryUpper || a.lowerName === queryLower ? 1 : 0;
+    const bExact = b.item.symbol === queryUpper || b.lowerName === queryLower ? 1 : 0;
+    if (aExact !== bExact) return bExact - aExact;
+
+    const aStarts = a.item.symbol.startsWith(queryUpper) || a.lowerName.startsWith(queryLower) ? 1 : 0;
+    const bStarts = b.item.symbol.startsWith(queryUpper) || b.lowerName.startsWith(queryLower) ? 1 : 0;
+    if (aStarts !== bStarts) return bStarts - aStarts;
+
+    if (tiebreaker) {
+      const tie = tiebreaker(a.item, b.item);
+      if (tie !== 0) return tie;
+    }
+    return a.item.symbol.localeCompare(b.item.symbol);
+  });
+
+  return ranked.map((entry) => entry.item);
+}
+
 function classifyStockAsset(data: StockData): string {
   const sector = (data.sector || '').toLowerCase();
   const industry = (data.industry || '').toLowerCase();
@@ -145,6 +175,8 @@ export async function searchAssetCandidates(
   mode: SearchMode,
 ): Promise<SearchCandidate[]> {
   const trimmed = query.trim();
+  const queryLower = trimmed.toLowerCase();
+  const queryUpper = trimmed.toUpperCase();
   if (!trimmed) throw new Error('Missing query');
 
   if (mode === 'crypto') {
@@ -167,7 +199,7 @@ export async function searchAssetCandidates(
     if (coins.length === 0) {
       throw new Error(`No crypto found for: ${trimmed}`);
     }
-    return coins.map((c: CryptoSearchResult) => ({
+    const candidates = coins.map((c: CryptoSearchResult) => ({
       type: 'crypto' as const,
       id: c.id,
       symbol: c.symbol,
@@ -175,6 +207,11 @@ export async function searchAssetCandidates(
       market: c.marketCapRank ? `CoinGecko · Rank #${c.marketCapRank}` : 'CoinGecko',
       marketCapRank: c.marketCapRank,
     }));
+    return sortByQueryRelevance(candidates, queryUpper, queryLower, (a, b) => {
+      if (a.marketCapRank === null && b.marketCapRank !== null) return 1;
+      if (b.marketCapRank === null && a.marketCapRank !== null) return -1;
+      return (a.marketCapRank ?? Number.MAX_SAFE_INTEGER) - (b.marketCapRank ?? Number.MAX_SAFE_INTEGER);
+    });
   }
 
   // Stock mode
@@ -182,13 +219,14 @@ export async function searchAssetCandidates(
   if (quotes.length === 0) {
     throw new Error(`No stocks found for: ${trimmed}`);
   }
-  return quotes.map((q: StockSearchResult) => ({
+  const candidates = quotes.map((q: StockSearchResult) => ({
     type: 'stock' as const,
     symbol: q.symbol,
     name: q.name,
     market: q.exchange || 'Stock Market',
     quoteType: q.type,
   }));
+  return sortByQueryRelevance(candidates, queryUpper, queryLower);
 }
 
 async function enrichWithInsights(

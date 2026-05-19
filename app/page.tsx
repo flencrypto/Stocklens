@@ -29,6 +29,7 @@ export default function Home() {
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [candidates, setCandidates] = useState<SearchCandidate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastAttempt, setLastAttempt] = useState<{ query: string; mode: SearchMode } | null>(null);
   const [openaiKey, setOpenaiKey] = useState('');
   const [showKeyInput, setShowKeyInput] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -84,19 +85,21 @@ export default function Home() {
   };
 
   const handleSearch = async (q: string, searchMode: SearchMode) => {
-    if (!q.trim()) return;
+    const trimmed = q.trim();
+    if (!trimmed) return;
     setLoading(true);
     setError(null);
     setResult(null);
     setCandidates(null);
+    setLastAttempt({ query: trimmed, mode: searchMode });
 
     try {
-      const matches = await searchAssetCandidates(q.trim(), searchMode);
+      const matches = await searchAssetCandidates(trimmed, searchMode);
       if (matches.length === 0) {
         throw new Error(
           searchMode === 'stock'
-            ? `No stocks found for: ${q.trim()}`
-            : `No crypto found for: ${q.trim()}`,
+            ? `No stocks found for: ${trimmed}`
+            : `No crypto found for: ${trimmed}`,
         );
       }
       if (matches.length === 1) {
@@ -149,7 +152,7 @@ export default function Home() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/splash.jpg"
-                alt="Mr.FLENS Stock-Lens"
+                alt="Mr.FLENS Stocklens"
                 className="w-full h-full object-cover"
               />
             </div>
@@ -192,6 +195,7 @@ export default function Home() {
                     setMode(m);
                     setCandidates(null);
                     setError(null);
+                    setResult(null);
                   }}
                   disabled={loading}
                   className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-50"
@@ -291,7 +295,7 @@ export default function Home() {
           >
             {openaiKey
               ? '🤖 OpenAI key set — AI insights enabled (edit)'
-              : '🤖 Add OpenAI API key for AI-generated insights'}
+              : '🤖 Optional: add OpenAI key for AI insights (heuristic mode works without it)'}
           </button>
           {showKeyInput && (
             <div className="mt-2 flex gap-2 items-center">
@@ -319,8 +323,7 @@ export default function Home() {
           )}
           {showKeyInput && (
             <p className="text-[10px] text-slate-600 mt-2">
-              Stored only in your browser&apos;s localStorage. The key is sent directly to
-              api.openai.com from your browser and is never transmitted to our servers.
+              Optional and stored only in your browser&apos;s localStorage. Without a key, Stocklens still works using built-in heuristic insights.
             </p>
           )}
         </div>
@@ -332,6 +335,21 @@ export default function Home() {
             style={{ background: '#1a0a0a', border: '1px solid #991b1b', color: '#fca5a5' }}
           >
             <strong>Error:</strong> {error}
+            {lastAttempt && (
+              <button
+                type="button"
+                onClick={() => handleSearch(lastAttempt.query, lastAttempt.mode)}
+                className="ml-3 px-2 py-1 rounded text-xs font-semibold"
+                style={{ background: '#450a0a', border: '1px solid #991b1b', color: '#fecaca' }}
+              >
+                Retry
+              </button>
+            )}
+            {mode === 'stock' && (
+              <p className="mt-2 text-xs text-rose-300/90">
+                Stock data can be rate-limited upstream. Retry shortly, or run the local Stocklens backend (`npm run stocklens:server`) for a steadier feed.
+              </p>
+            )}
           </div>
         )}
 
@@ -344,7 +362,7 @@ export default function Home() {
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm text-slate-300">
                 Found <strong className="text-blue-400">{candidates.length}</strong> matches
-                for &ldquo;{query}&rdquo;. Select one to continue:
+                for &ldquo;{query}&rdquo;. Choose the exact listing/symbol:
               </p>
               <button
                 type="button"
@@ -370,13 +388,18 @@ export default function Home() {
                         <span className="text-sm font-bold text-slate-100 truncate">
                           {c.name}
                         </span>
-                        <span className="text-[11px] text-slate-500">
-                          {c.market} · {sub}
+                        <span className="text-[11px] text-slate-500 flex flex-wrap gap-1">
+                          <span>{c.market}</span>
+                          <span>·</span>
+                          <span>{sub}</span>
                         </span>
                       </span>
-                      <span className="text-xs font-mono font-bold text-blue-400 shrink-0">
-                        {c.symbol}
-                      </span>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className="text-xs text-slate-500 uppercase tracking-widest">Ticker</span>
+                        <span className="text-xs font-mono font-bold text-blue-400">
+                          {c.symbol}
+                        </span>
+                      </div>
                     </button>
                   </li>
                 );
@@ -424,8 +447,21 @@ export default function Home() {
                   <span className="ml-2 text-purple-400">· 🤖 AI insights via OpenAI</span>
                 )}
                 {result.insightsError && (
-                  <span className="ml-2 text-amber-400" title={result.insightsError}>
-                    · AI insights unavailable
+                  <span className="ml-2 inline-flex items-center gap-2 text-amber-400" title={result.insightsError}>
+                    <span>· AI insights unavailable</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowKeyInput(true);
+                        const reducedMotion =
+                          typeof window !== 'undefined' &&
+                          window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+                        window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+                      }}
+                      className="text-[10px] uppercase tracking-widest underline underline-offset-2 hover:text-amber-300"
+                    >
+                      Add OpenAI key
+                    </button>
                   </span>
                 )}
               </p>
@@ -442,6 +478,9 @@ export default function Home() {
               🖨️ Export / Print
             </button>
           </div>
+          <p className="max-w-4xl mx-auto px-4 -mt-4 mb-5 text-[11px] text-slate-500 no-print">
+            Tip: use your browser&apos;s Print dialog and choose <kbd className="font-semibold">Save as PDF</kbd> for sharing.
+          </p>
 
           {/* Infographic Pages */}
           <div className="flex flex-col lg:flex-row justify-center gap-6 px-4 items-start">
@@ -466,9 +505,8 @@ export default function Home() {
 
       {/* Footer */}
       <div className="text-center py-8 text-[11px] text-slate-700 no-print">
-        Mr.FLENS Stock-Lens — For educational purposes only. Not financial advice.
+        Mr.FLENS Stocklens — For educational purposes only. Not financial advice.
       </div>
     </main>
   );
 }
-

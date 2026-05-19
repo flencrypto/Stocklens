@@ -48,27 +48,19 @@ export interface StockData {
 
 const YF_BASE = 'https://query1.finance.yahoo.com';
 
-// Yahoo Finance APIs do not send CORS headers, and the v10 `quoteSummary`
-// endpoint additionally requires a "crumb" cookie/auth token that cannot
-// be obtained from the browser. Because Stocklens is deployed as a static
-// site (GitHub Pages, `next build` -> `./out`), we have no backend of our
-// own to proxy through, so we route Yahoo Finance requests through a
-// public CORS-enabled relay.
-//
-// Public CORS proxies are unreliable individually (any one of them can be
-// down, rate-limited, or temporarily 5xx-ing on a given day), so we keep
-// a small ordered list of proxies and fall through to the next on failure.
-// Once we find one that works in the current session we remember its index
-// so subsequent calls go to the known-good proxy first.
+// Yahoo Finance APIs do not send CORS headers in browsers. We first try an
+// optional first-party proxy endpoint (`/api/yahoo`) when available (local
+// stocklens backend or configured hosted backend), and only then fall back to
+// public CORS relays as a last resort.
 type ProxyBuilder = (yahooUrl: string) => string;
 const CORS_PROXIES: ProxyBuilder[] = [
   (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`,
   (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}`,
-  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
 ];
 
 let preferredProxyIndex = 0;
+let hasWarnedInvalidApiBase = false;
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -110,31 +102,106 @@ function isTimeoutOrAbortError(err: unknown): boolean {
   return typeof code === 'string' && code.toLowerCase().includes('timeout');
 }
 
-async function fetchYahooJson(
+function normalizeBaseUrl(base: string): string {
+  return base.replace(/\/+$/, '');
+}
+
+function normalizeConfiguredBackendBase(base: string): string | null {
+  try {
+    const parsed = new URL(base);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return normalizeBaseUrl(parsed.origin);
+  } catch {
+    return null;
+  }
+}
+
+function getBackendProxyBases(): string[] {
+  const bases: string[] = [];
+  const envBase = process.env.NEXT_PUBLIC_STOCKLENS_API_BASE?.trim();
+  if (envBase) {
+    const normalized = normalizeConfiguredBackendBase(envBase);
+    if (normalized) {
+      bases.push(normalized);
+    } else if (!hasWarnedInvalidApiBase && process.env.NODE_ENV !== 'production') {
+      hasWarnedInvalidApiBase = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[stocklens] Ignoring NEXT_PUBLIC_STOCKLENS_API_BASE because it is not a valid absolute http(s) URL:',
+        envBase,
+      );
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      bases.push('http://127.0.0.1:3001', 'http://localhost:3001');
+    }
+  }
+
+  return Array.from(new Set(bases));
+}
+
+function buildTargets(
   yahooUrl: string,
-  maxRetries = 2,
-): Promise<unknown> {
+  backendPath: string | null,
+): Array<{ label: string; url: string; isPublicProxy: boolean; proxyIndex: number | null }> {
+  const targets: Array<{ label: string; url: string; isPublicProxy: boolean; proxyIndex: number | null }> = [];
+
+  if (backendPath) {
+    for (const base of getBackendProxyBases()) {
+      targets.push({
+        label: `backend(${base})`,
+        url: `${base}${backendPath}`,
+        isPublicProxy: false,
+        proxyIndex: null,
+      });
+    }
+  }
+
   const order: number[] = [];
   for (let i = 0; i < CORS_PROXIES.length; i++) {
     order.push((preferredProxyIndex + i) % CORS_PROXIES.length);
   }
+  for (const idx of order) {
+    targets.push({
+      label: `proxy(${idx})`,
+      url: CORS_PROXIES[idx](yahooUrl),
+      isPublicProxy: true,
+      proxyIndex: idx,
+    });
+  }
 
+  return targets;
+}
+
+async function fetchYahooJson(
+  yahooUrl: string,
+  backendPath: string | null,
+  maxRetries = 2,
+): Promise<unknown> {
   let lastStatus: number | undefined;
   let lastError: unknown;
   const errors: string[] = [];
 
-  for (const idx of order) {
-    const proxiedUrl = CORS_PROXIES[idx](yahooUrl);
+  const targets = buildTargets(yahooUrl, backendPath);
+
+  for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
+    const target = targets[targetIndex];
+    const targetRetries = target.isPublicProxy ? maxRetries : 1;
 
     // Retry each proxy up to maxRetries times for transient failures
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    for (let attempt = 0; attempt <= targetRetries; attempt++) {
       try {
-        const res = await fetchWithTimeout(proxiedUrl, 10000);
+        const res = await fetchWithTimeout(target.url, 10000);
         if (!res.ok) {
           lastStatus = res.status;
           const errorMsg = `HTTP ${res.status}`;
           if (attempt === 0) {
-            errors.push(`Proxy ${idx}: ${errorMsg}`);
+            errors.push(`${target.label}: ${errorMsg}`);
           }
           // 404 from the upstream is a real "not found" signal we want to
           // surface immediately rather than retrying through other proxies,
@@ -151,15 +218,17 @@ async function fetchYahooJson(
             res.status === 522 ||
             res.status === 524
           ) {
-            if (attempt < maxRetries) {
+            if (attempt < targetRetries) {
               await sleep(Math.min(1000 * Math.pow(2, attempt), 3000));
               continue;
             }
           }
-          break; // Non-retryable error, try next proxy
+          break; // Non-retryable error, try next target
         }
         const data = await res.json();
-        preferredProxyIndex = idx;
+        if (target.isPublicProxy && target.proxyIndex != null) {
+          preferredProxyIndex = target.proxyIndex;
+        }
         return data;
       } catch (err) {
         // If we already classified this as an upstream 404, propagate it.
@@ -167,22 +236,22 @@ async function fetchYahooJson(
         lastError = err;
         const errorMsg = err instanceof Error ? err.message : String(err);
         if (attempt === 0) {
-          errors.push(`Proxy ${idx}: ${errorMsg}`);
+          errors.push(`${target.label}: ${errorMsg}`);
         }
         // Retry on network errors (timeouts, connection refused, etc.)
-        if (attempt < maxRetries && isTimeoutOrAbortError(err)) {
+        if (attempt < targetRetries && isTimeoutOrAbortError(err)) {
           await sleep(Math.min(1000 * Math.pow(2, attempt), 3000));
           continue;
         }
-        break; // Non-retryable error or max retries reached, try next proxy
+        break; // Non-retryable error or max retries reached, try next target
       }
     }
   }
 
   const err = new Error(
     lastStatus
-      ? `HTTP ${lastStatus} (tried ${CORS_PROXIES.length} proxies with retries)`
-      : `All CORS proxies failed: ${errors.join('; ')}`,
+      ? `HTTP ${lastStatus} (all stock data providers failed)`
+      : `Stock data providers unavailable: ${errors.join('; ')}`,
   ) as Error & { status?: number };
   if (lastStatus) err.status = lastStatus;
   if (lastError && !lastStatus) {
@@ -213,12 +282,17 @@ export async function searchStocks(
   const yahooUrl =
     `${YF_BASE}/v1/finance/search?q=${encodeURIComponent(trimmed)}` +
     `&quotesCount=${limit}&newsCount=0&listsCount=0`;
+  const backendPath =
+    `/api/yahoo?endpoint=search&q=${encodeURIComponent(trimmed)}` +
+    `&quotesCount=${encodeURIComponent(String(limit))}`;
 
   let json: Record<string, unknown>;
   try {
-    json = (await fetchYahooJson(yahooUrl)) as Record<string, unknown>;
+    json = (await fetchYahooJson(yahooUrl, backendPath)) as Record<string, unknown>;
   } catch {
-    throw new Error(`Failed to search stocks for: ${trimmed}`);
+    throw new Error(
+      'Live stock search is temporarily unavailable. Please retry in a few seconds, or run `npm run stocklens:server` for the local Stocklens backend and a more reliable stock feed.',
+    );
   }
   const quotes: Array<Record<string, unknown>> =
     (json?.quotes as Array<Record<string, unknown>>) ?? [];
@@ -295,16 +369,17 @@ export async function fetchStockData(ticker: string): Promise<StockData> {
   // basic price/exchange/52-week metadata and leave the deeper financial
   // fields as null (the UI already handles missing values gracefully).
   const yahooUrl = `${YF_BASE}/v8/finance/chart/${encodeURIComponent(upperTicker)}?interval=1d&range=1d`;
+  const backendPath = `/api/yahoo?endpoint=chart&symbol=${encodeURIComponent(upperTicker)}`;
 
   let json: YahooChartResponse;
   try {
-    json = (await fetchYahooJson(yahooUrl)) as YahooChartResponse;
+    json = (await fetchYahooJson(yahooUrl, backendPath)) as YahooChartResponse;
   } catch (err) {
     const status = (err as { status?: number } | null)?.status;
     throw new Error(
       status === 404
         ? `No results found for ticker: ${upperTicker}`
-        : `Failed to fetch data for ticker: ${upperTicker}`,
+        : `Live stock quote for ${upperTicker} is temporarily unavailable. Please retry in a few seconds.`,
     );
   }
 

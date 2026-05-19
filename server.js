@@ -10,6 +10,7 @@ const { rateLimit } = require("express-rate-limit");
 const OpenAI = require("openai").default;
 
 const app = express();
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || "5mb";
 
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000")
   .split(",")
@@ -27,7 +28,7 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
 const PORT = Number(process.env.PORT || 3001);
@@ -42,6 +43,15 @@ const stockLensLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many requests. Please wait and try again." },
 });
+const yahooProxyLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  limit: RATE_LIMIT_MAX_REQUESTS * 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many market-data requests. Please retry shortly." },
+});
+const ALLOWED_YAHOO_HOSTS = new Set(["query1.finance.yahoo.com"]);
+const ALLOWED_YAHOO_PATH_PREFIXES = ["/v1/finance/search", "/v8/finance/chart"];
 
 app.use("/outputs", express.static(OUTPUT_DIR));
 
@@ -79,6 +89,80 @@ function getBase64ImageFromResponse(response) {
 
 app.get("/api/stocklens/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get("/api/yahoo", yahooProxyLimiter, async (req, res) => {
+  try {
+    const endpoint = typeof req.query.endpoint === "string" ? req.query.endpoint : "";
+    let upstreamUrl = "";
+
+    if (endpoint === "search") {
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      const quotesCountParam = Array.isArray(req.query.quotesCount)
+        ? req.query.quotesCount[0]
+        : req.query.quotesCount;
+      const quotesCount = Number(typeof quotesCountParam === "string" ? quotesCountParam : 10);
+      if (!q) {
+        return res.status(400).json({ error: "Missing query param: q" });
+      }
+      const safeLimit = Number.isFinite(quotesCount)
+        ? Math.max(1, Math.min(50, Math.trunc(quotesCount)))
+        : 10;
+      upstreamUrl =
+        `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}` +
+        `&quotesCount=${safeLimit}&newsCount=0&listsCount=0`;
+    } else if (endpoint === "chart") {
+      const symbol = typeof req.query.symbol === "string" ? req.query.symbol.trim() : "";
+      if (!symbol) {
+        return res.status(400).json({ error: "Missing query param: symbol" });
+      }
+      const safeSymbol = symbol.toUpperCase();
+      const allowedSymbolPatterns = [
+        /^[A-Z0-9.-]{1,15}$/,
+        /^\^[A-Z0-9.-]{1,15}$/,
+        /^[A-Z]{3,10}=X$/,
+      ];
+      if (!allowedSymbolPatterns.some((pattern) => pattern.test(safeSymbol))) {
+        return res.status(400).json({ error: "Invalid symbol." });
+      }
+      upstreamUrl =
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(safeSymbol)}` +
+        "?interval=1d&range=1d";
+    } else {
+      return res.status(400).json({ error: "Unsupported endpoint." });
+    }
+
+    const parsed = new URL(upstreamUrl);
+    if (
+      parsed.protocol !== "https:" ||
+      !ALLOWED_YAHOO_HOSTS.has(parsed.hostname) ||
+      !ALLOWED_YAHOO_PATH_PREFIXES.some((prefix) => parsed.pathname.startsWith(prefix))
+    ) {
+      return res.status(500).json({ error: "Server misconfiguration for Yahoo route allowlist." });
+    }
+
+    const upstream = await fetch(upstreamUrl, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "StocklensYahooProxy/1.0",
+      },
+      signal: AbortSignal.timeout(6_000),
+    });
+
+    const bodyText = await upstream.text();
+    const upstreamContentType = upstream.headers.get("content-type");
+    if (upstreamContentType) {
+      res.set("Content-Type", upstreamContentType);
+    } else {
+      res.set("Content-Type", "text/plain; charset=utf-8");
+    }
+    return res.status(upstream.status).send(bodyText);
+  } catch (error) {
+    return res.status(502).json({
+      error: "Yahoo upstream request failed.",
+      detail: error?.message || String(error),
+    });
+  }
 });
 
 app.post("/api/stocklens", stockLensLimiter, async (req, res) => {

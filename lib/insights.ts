@@ -1,5 +1,6 @@
 import { StockData } from '@/lib/stockData';
 import { CryptoData } from '@/lib/cryptoData';
+import { describeExchangeContext } from '@/lib/exchanges';
 
 export interface AssetInsights {
   thesis: string;
@@ -10,6 +11,8 @@ export interface AssetInsights {
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_MODEL = 'gpt-4o-mini';
+const MAX_TRACKED_UNKNOWN_EXCHANGES = 250;
+const seenUnknownExchanges = new Set<string>();
 
 /**
  * Builds a compact, structured snapshot of the asset for the LLM prompt.
@@ -67,11 +70,41 @@ export async function generateInsights(
   const snapshot = buildAssetSnapshot(type, data, assetClass);
   const model = options?.model || DEFAULT_MODEL;
 
+  // Enrich the snapshot with exchange/market-tier context for stocks so the
+  // LLM can reference the listing venue and investor base.
+  let exchangeContext = '';
+  if (type === 'stock') {
+    const stockData = data as StockData;
+    const exchangeRaw = stockData.exchange || '';
+    exchangeContext = describeExchangeContext(exchangeRaw, stockData.marketCap, {
+      ticker: stockData.ticker,
+    });
+
+    if (
+      !exchangeContext &&
+      exchangeRaw.trim() &&
+      process.env.NODE_ENV !== 'production' &&
+      !seenUnknownExchanges.has(exchangeRaw.trim())
+    ) {
+      if (seenUnknownExchanges.size >= MAX_TRACKED_UNKNOWN_EXCHANGES) {
+        const oldest = seenUnknownExchanges.values().next().value;
+        if (oldest) seenUnknownExchanges.delete(oldest);
+      }
+      seenUnknownExchanges.add(exchangeRaw.trim());
+      // eslint-disable-next-line no-console
+      console.warn('[stocklens] Unknown exchange code/name:', exchangeRaw.trim());
+    }
+  }
+
   const systemPrompt =
     'You are an experienced equity and crypto research analyst. ' +
     'Given a structured snapshot of an asset, produce concise, evidence-based ' +
     'investment insights. Reference the supplied numbers where relevant ' +
     '(e.g. revenue growth, margins, market cap rank, 30d momentum). ' +
+    (exchangeContext
+      ? "Use the exchange/market-tier context provided to inform comments about " +
+        "the issuer's listing venue, investor base, and index eligibility. "
+      : '') +
     'Avoid generic platitudes and never give personalised financial advice. ' +
     'Respond with strict JSON only — no markdown, no commentary.';
 
@@ -89,6 +122,7 @@ export async function generateInsights(
     '',
     'Asset snapshot:',
     JSON.stringify(snapshot),
+    ...(exchangeContext ? ['', 'Exchange / market context:', exchangeContext] : []),
   ].join('\n');
 
   const res = await fetch(OPENAI_URL, {

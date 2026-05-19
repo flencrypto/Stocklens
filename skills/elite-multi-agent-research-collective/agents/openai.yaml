@@ -1,0 +1,4 @@
+interface:
+  display_name: "Elite Multi-Agent Research Collective"
+  short_description: "12-agent collective for elite research + delivery"
+  default_prompt: "Use $elite-multi-agent-research-collective to assemble the research team and deliver an institutional-grade analysis."

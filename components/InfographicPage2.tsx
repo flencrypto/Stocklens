@@ -5,12 +5,22 @@ import ScoreRing from './ScoreRing';
 import { StockData } from '@/lib/stockData';
 import { CryptoData } from '@/lib/cryptoData';
 import { fmtLarge, fmtPctDirect } from '@/lib/format';
+import { getExchangeSummary } from '@/lib/exchanges';
 
 interface InfographicPage2Props {
   type: 'stock' | 'crypto';
   data: StockData | CryptoData;
   assetClass: string;
 }
+
+const TIER_COLOR_BY_TYPE: Record<string, string> = {
+  main: '#22d3ee',
+  growth: '#4ade80',
+  sme: '#facc15',
+  otc: '#f97316',
+  index: '#a855f7',
+  professional: '#38bdf8',
+};
 
 // Calculate investment score
 function calcScore(type: string, data: StockData | CryptoData): number {
@@ -381,6 +391,12 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
   const risks = generateRisks(type, data);
   const pathToValue = generatePathToValue(type);
 
+  // Exchange & market context (stocks only)
+  const exchangeSummary = isStock && stockData
+    ? getExchangeSummary(stockData.exchange || '', { ticker: stockData.ticker })
+    : null;
+  const exchangeLookupValue = stockData?.exchange?.trim() || '';
+
   // Market opportunity numbers
   const tamEstimate = isStock
     ? stockData?.marketCap
@@ -708,6 +724,140 @@ export default function InfographicPage2({ type, data, assetClass }: Infographic
             </div>
           </div>
         </div>
+        {/* EXCHANGE & MARKET CONTEXT (stocks only) */}
+        {exchangeSummary && (
+          <div>
+            <div className="section-header">Exchange &amp; Market Context</div>
+            <div
+              className="rounded-lg p-3"
+              style={{
+                background: 'linear-gradient(135deg, #0a0f1a, #0D1422)',
+                border: '1px solid #1E2D47',
+              }}
+            >
+              {/* Venue header row */}
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <div className="text-[11px] font-black text-cyan-300">
+                    {exchangeSummary.name}
+                  </div>
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest">
+                    {exchangeSummary.region}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest">Global Rank</div>
+                  <div className="text-base font-black text-purple-400">
+                    {exchangeSummary.rank != null ? `#${exchangeSummary.rank}` : 'n/a'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats row */}
+              <div className="grid grid-cols-3 gap-1.5 mb-2">
+                <div
+                  className="rounded p-1.5 text-center"
+                  style={{ background: '#080C14', border: '1px solid #1E2D47' }}
+                >
+                  <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">Mkt Cap</div>
+                  <div className="text-[11px] font-black text-blue-400">
+                    {exchangeSummary.marketCapTrn != null && exchangeSummary.marketCapTrn > 0
+                      ? `$${exchangeSummary.marketCapTrn}T`
+                      : 'n/a'}
+                  </div>
+                </div>
+                <div
+                  className="rounded p-1.5 text-center"
+                  style={{ background: '#080C14', border: '1px solid #1E2D47' }}
+                >
+                  <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">Listing Tier</div>
+                  <div className="text-[9px] font-bold text-cyan-300 leading-tight">
+                    {exchangeSummary.tier}
+                  </div>
+                </div>
+                <div
+                  className="rounded p-1.5 text-center"
+                  style={{ background: '#080C14', border: '1px solid #1E2D47' }}
+                >
+                  <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">Segments</div>
+                  <div className="text-[11px] font-black text-green-400">
+                    {exchangeSummary.segments.length}
+                  </div>
+                </div>
+              </div>
+
+              {/* Market segments pills */}
+              <div className="flex flex-wrap gap-1 mb-2">
+                {exchangeSummary.segments.map((seg) => {
+                  const tierColor = TIER_COLOR_BY_TYPE[seg.tier] ?? '#a855f7';
+                  return (
+                    <span
+                      key={seg.name}
+                      className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full"
+                      style={{
+                        background: `${tierColor}18`,
+                        color: tierColor,
+                        border: `1px solid ${tierColor}40`,
+                      }}
+                    >
+                      {seg.name}
+                    </span>
+                  );
+                })}
+              </div>
+
+              {/* Indices */}
+              {exchangeSummary.indices.length > 0 && (
+                <div className="mb-2">
+                  <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-1">
+                    Key Indices
+                  </div>
+                  <div className="text-[9px] text-slate-300 leading-relaxed">
+                    {exchangeSummary.indices.slice(0, 5).join(' · ')}
+                  </div>
+                </div>
+              )}
+
+              {/* Practical note */}
+              <div
+                className="rounded p-2"
+                style={{ background: '#080C14', border: '1px solid #1E2D47' }}
+              >
+                <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">
+                  Intelligence Note
+                </div>
+                <p className="text-[9px] text-slate-400 leading-relaxed">
+                  {exchangeSummary.practicalNote}
+                </p>
+              </div>
+
+              <div className="mt-2 text-[8px] text-slate-500">
+                Exchange figures are approximate; as of {exchangeSummary.dataAsOf}.
+              </div>
+            </div>
+          </div>
+        )}
+        {isStock && !exchangeSummary && (
+          <div>
+            <div className="section-header">Exchange &amp; Market Context</div>
+            <div
+              className="rounded-lg p-3"
+              style={{
+                background: 'linear-gradient(135deg, #0a0f1a, #0D1422)',
+                border: '1px solid #1E2D47',
+              }}
+            >
+              <div className="text-[10px] text-slate-300 leading-relaxed">
+                Exchange context is unavailable for this listing
+                {exchangeLookupValue ? ` (${exchangeLookupValue})` : ''}.
+              </div>
+              <div className="text-[9px] text-slate-500 mt-1">
+                The market data was still loaded, but this exchange code is not yet mapped in the reference dataset.
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* FOOTER */}
