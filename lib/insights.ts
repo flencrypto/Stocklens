@@ -17,8 +17,11 @@ const seenUnknownExchanges = new Set<string>();
 /**
  * Builds a compact, structured snapshot of the asset for the LLM prompt.
  * Only includes non-null fields so the prompt stays focused on real data.
+ *
+ * Exported so the browser path can pre-build the snapshot and send it to
+ * `/api/insights` instead of the full raw asset object, reducing payload size.
  */
-function buildAssetSnapshot(
+export function buildAssetSnapshot(
   type: 'stock' | 'crypto',
   data: StockData | CryptoData,
   assetClass: string,
