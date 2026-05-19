@@ -4,12 +4,12 @@
  * Structured reference data for the world's major stock exchanges, their listing
  * boards, market tiers, growth markets, OTC quotation tiers and associated indices.
  *
- * Source: WFE Market Statistics May 2026, LSEG, LSE, FCA, Nasdaq, NYSE,
+ * Source: WFE Market Statistics (latest published through Apr 2026), LSEG, LSE, FCA, Nasdaq, NYSE,
  * OTC Markets, Euronext, Deutsche Börse, JPX, HKEX, SGX, Saudi Exchange and
  * other official exchange materials. Figures rounded; move daily.
  */
 
-export const EXCHANGE_DATA_AS_OF = 'May 2026';
+export const EXCHANGE_DATA_AS_OF = 'Apr 2026';
 
 export interface MarketSegment {
   name: string;
@@ -25,7 +25,7 @@ export interface ExchangeInfo {
   region: string;
   country: string;
   /**
-   * Approximate domestic equity market cap in USD trillions (rounded, from WFE May 2026).
+   * Approximate domestic equity market cap in USD trillions (rounded, from WFE snapshots through Apr 2026).
    * null means the figure is not available in the dataset.
    */
   marketCapTrn: number | null;

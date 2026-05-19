@@ -10,6 +10,7 @@ const { rateLimit } = require("express-rate-limit");
 const OpenAI = require("openai").default;
 
 const app = express();
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || "5mb";
 
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000")
   .split(",")
@@ -27,7 +28,7 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: "250mb" }));
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
 const PORT = Number(process.env.PORT || 3001);
@@ -97,7 +98,10 @@ app.get("/api/yahoo", yahooProxyLimiter, async (req, res) => {
 
     if (endpoint === "search") {
       const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-      const quotesCount = Number(req.query.quotesCount || 10);
+      const quotesCountParam = Array.isArray(req.query.quotesCount)
+        ? req.query.quotesCount[0]
+        : req.query.quotesCount;
+      const quotesCount = Number(typeof quotesCountParam === "string" ? quotesCountParam : 10);
       if (!q) {
         return res.status(400).json({ error: "Missing query param: q" });
       }
@@ -146,10 +150,13 @@ app.get("/api/yahoo", yahooProxyLimiter, async (req, res) => {
     });
 
     const bodyText = await upstream.text();
-    return res
-      .status(upstream.status)
-      .set("Content-Type", "application/json; charset=utf-8")
-      .send(bodyText);
+    const upstreamContentType = upstream.headers.get("content-type");
+    if (upstreamContentType) {
+      res.set("Content-Type", upstreamContentType);
+    } else {
+      res.set("Content-Type", "text/plain; charset=utf-8");
+    }
+    return res.status(upstream.status).send(bodyText);
   } catch (error) {
     return res.status(502).json({
       error: "Yahoo upstream request failed.",

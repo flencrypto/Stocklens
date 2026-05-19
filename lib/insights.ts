@@ -11,6 +11,7 @@ export interface AssetInsights {
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_MODEL = 'gpt-4o-mini';
+const MAX_TRACKED_UNKNOWN_EXCHANGES = 250;
 const seenUnknownExchanges = new Set<string>();
 
 /**
@@ -85,6 +86,10 @@ export async function generateInsights(
       process.env.NODE_ENV !== 'production' &&
       !seenUnknownExchanges.has(exchangeRaw.trim())
     ) {
+      if (seenUnknownExchanges.size >= MAX_TRACKED_UNKNOWN_EXCHANGES) {
+        const oldest = seenUnknownExchanges.values().next().value;
+        if (oldest) seenUnknownExchanges.delete(oldest);
+      }
       seenUnknownExchanges.add(exchangeRaw.trim());
       // eslint-disable-next-line no-console
       console.warn('[stocklens] Unknown exchange code/name:', exchangeRaw.trim());

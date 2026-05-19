@@ -60,6 +60,7 @@ const CORS_PROXIES: ProxyBuilder[] = [
 ];
 
 let preferredProxyIndex = 0;
+let hasWarnedInvalidApiBase = false;
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -105,10 +106,34 @@ function normalizeBaseUrl(base: string): string {
   return base.replace(/\/+$/, '');
 }
 
+function normalizeConfiguredBackendBase(base: string): string | null {
+  try {
+    const parsed = new URL(base);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return normalizeBaseUrl(parsed.origin);
+  } catch {
+    return null;
+  }
+}
+
 function getBackendProxyBases(): string[] {
   const bases: string[] = [];
   const envBase = process.env.NEXT_PUBLIC_STOCKLENS_API_BASE?.trim();
-  if (envBase) bases.push(normalizeBaseUrl(envBase));
+  if (envBase) {
+    const normalized = normalizeConfiguredBackendBase(envBase);
+    if (normalized) {
+      bases.push(normalized);
+    } else if (!hasWarnedInvalidApiBase && process.env.NODE_ENV !== 'production') {
+      hasWarnedInvalidApiBase = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[stocklens] Ignoring NEXT_PUBLIC_STOCKLENS_API_BASE because it is not a valid absolute http(s) URL:',
+        envBase,
+      );
+    }
+  }
 
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
@@ -123,8 +148,8 @@ function getBackendProxyBases(): string[] {
 function buildTargets(
   yahooUrl: string,
   backendPath: string | null,
-): Array<{ label: string; url: string; isPublicProxy: boolean }> {
-  const targets: Array<{ label: string; url: string; isPublicProxy: boolean }> = [];
+): Array<{ label: string; url: string; isPublicProxy: boolean; proxyIndex: number | null }> {
+  const targets: Array<{ label: string; url: string; isPublicProxy: boolean; proxyIndex: number | null }> = [];
 
   if (backendPath) {
     for (const base of getBackendProxyBases()) {
@@ -132,6 +157,7 @@ function buildTargets(
         label: `backend(${base})`,
         url: `${base}${backendPath}`,
         isPublicProxy: false,
+        proxyIndex: null,
       });
     }
   }
@@ -145,6 +171,7 @@ function buildTargets(
       label: `proxy(${idx})`,
       url: CORS_PROXIES[idx](yahooUrl),
       isPublicProxy: true,
+      proxyIndex: idx,
     });
   }
 
@@ -199,9 +226,8 @@ async function fetchYahooJson(
           break; // Non-retryable error, try next target
         }
         const data = await res.json();
-        if (target.isPublicProxy) {
-          const matchedProxy = CORS_PROXIES.findIndex((builder) => builder(yahooUrl) === target.url);
-          if (matchedProxy >= 0) preferredProxyIndex = matchedProxy;
+        if (target.isPublicProxy && target.proxyIndex != null) {
+          preferredProxyIndex = target.proxyIndex;
         }
         return data;
       } catch (err) {
