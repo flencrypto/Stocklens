@@ -12,7 +12,7 @@ import {
   CryptoData,
   CryptoSearchResult,
 } from '@/lib/cryptoData';
-import { generateInsights, AssetInsights } from '@/lib/insights';
+import { generateInsights, buildAssetSnapshot, AssetInsights } from '@/lib/insights';
 import { generateIntelligence, IntelligenceResult } from '@/lib/intelligence';
 
 export type SearchMode = 'stock' | 'crypto';
@@ -238,13 +238,17 @@ async function enrichWithInsights(
   const apiKey = options.openaiApiKey?.trim() || '';
 
   const tryServer = async (): Promise<IntelligenceResult> => {
+    // Build the compact snapshot client-side so the route receives a smaller
+    // normalized payload instead of the full raw asset object.
+    const snapshot = buildAssetSnapshot(result.type, result.data, result.assetClass);
+
     const res = await fetch('/api/insights', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: result.type,
         assetClass: result.assetClass,
-        data: result.data,
+        snapshot,
         apiKey: apiKey || undefined,
       }),
     });
