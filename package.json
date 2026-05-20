@@ -1,7 +1,10 @@
 {
-  "name": "stocklens-temp",
+  "name": "@flencrypto/stocklens",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
